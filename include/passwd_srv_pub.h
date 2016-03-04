@@ -20,15 +20,12 @@
 /*
  * global definitions
  */
-#define PASSWD_SRV_SOCK_FD \
-    "/var/run/ops-passwd-srv/ops-passwd-srv.sock" /* socket descriptor */
 #define PASSWD_USERNAME_SIZE 50                         /* size of username */
 #define PASSWD_PASSWORD_SIZE 50                         /* size of password */
 #define PASSWD_SRV_FP_SIZE   255
-#define PASSWD_SRV_PUB_KEY_LOC \
-    "/var/run/ops-passwd-srv/ops-passwd-srv-pub.pem"    /* public key loc*/
+#define PASSWD_SRV_MAX_STR_SIZE   255
 #define PASSWD_SRV_PUB_KEY_LEN 2048                     /* key length in bits */
-
+#define PASSWDSRV_PAD_OVERHEAD  41
 /*
  * Message type definition
  *
@@ -40,7 +37,6 @@
 #define PASSWD_MSG_CHG_PASSWORD 1 /* request to change password */
 #define PASSWD_MSG_ADD_USER     2 /* request to add user */
 #define PASSWD_MSG_DEL_USER     3 /* request to del user */
-
 
 /*
  * Error code definition
@@ -65,6 +61,7 @@
 #define PASSWD_ERR_USER_EXIST         13 /* Failed to add user */
 #define PASSWD_ERR_USERDEL_FAILED     14 /* Failed to del user */
 #define PASSWD_ERR_DECRYPT_FAILED     15 /* Failed to decrypt client message */
+#define PASSWD_ERR_YAML_FILE          16 /* error accessing yaml file */
 
 
 /*
@@ -72,11 +69,44 @@
  */
 typedef struct passwd_srv_msg {
     int  op_code;
-    char username[PASSWD_USERNAME_SIZE];
-    char oldpasswd[PASSWD_PASSWORD_SIZE];
-    char newpasswd[PASSWD_PASSWORD_SIZE];
-    char file_path[PASSWD_SRV_FP_SIZE];
+    char username[PASSWD_USERNAME_SIZE+1];
+    char oldpasswd[PASSWD_PASSWORD_SIZE+1];
+    char newpasswd[PASSWD_PASSWORD_SIZE+1];
 } passwd_srv_msg_t;
 
+/*
+ * Definitions use to parse YAML file for file path
+ */
+
+#define PASSWD_SRV_YAML_FILE "/etc/ops-passwd-srv/ops-passwd-srv.yaml"
+
+enum PASSWD_yaml_path_type_e {
+    PASSWD_SRV_YAML_PATH_NONE = 0x0,
+    PASSWD_SRV_YAML_PATH_SOCK,
+    PASSWD_SRV_YAML_PATH_PUB_KEY,
+    PASSWD_SRV_YAML_PATH_MAX
+};
+
+enum PASSWD_yaml_key_e {
+    PASSWD_SRV_YAML_VALUE = 0x0,
+    PASSWD_SRV_YAML_PATH_TYPE,
+    PASSWD_SRV_YAML_PATH,
+    PASSWD_SRV_YAML_DESC,
+    PASSWD_SRV_YAML_MAX
+};
+
+typedef struct passwd_yaml_file_path {
+    enum PASSWD_yaml_path_type_e type;
+    char    path[PASSWD_SRV_MAX_STR_SIZE+1];
+    char    desc[PASSWD_SRV_MAX_STR_SIZE+1];
+    struct  passwd_yaml_file_path *next;
+} passwd_yaml_file_path_t;
+
+extern int parse_passwd_srv_yaml();
+extern char *get_file_path(enum PASSWD_yaml_path_type_e type);
+extern char *get_socket_descriptor_path();
+extern char *get_public_key_path();
+extern int  init_yaml_parser();
+extern int  uninit_yaml_parser();
 
 #endif /* PASSWD_SRV_PUB_H_ */
