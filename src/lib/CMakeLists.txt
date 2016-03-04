@@ -14,18 +14,18 @@
 
 cmake_minimum_required (VERSION 2.8)
 
-set (PASSWDSRV ops-passwd-srv)
-project (${PASSWDSRV})
-set (SRC_DIR src)
-set (INCL_DIR include)
+project ("passwd_srv_lib")
+
+set (INCL_DIR ${CMAKE_SOURCE_DIR}/include)
+set (LIBPASSWDSRV passwd_srv)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Werror")
 
+add_definitions(-DHAVE_CONFIG_H -DHAVE_SOCKLEN_T)
+
 # Rules to locate needed libraries
 include(FindPkgConfig)
-pkg_check_modules(CONFIG_YAML REQUIRED ops-config-yaml)
 pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
-pkg_check_modules(OVSDB REQUIRED libovsdb)
 
 include_directories (
     ${PROJECT_BINARY_DIR}
@@ -34,21 +34,15 @@ include_directories (
 )
 
 # Source files to build ops-passwd-srv
-set (SOURCES
-    ${PROJECT_SOURCE_DIR}/src/passwd_srvd.c
-    ${SRC_DIR}/passwd_srv_conn.c
-    ${SRC_DIR}/passwd_srv_util.c
-    ${SRC_DIR}/lib/passwd_srv_yaml.c
-)
+set (LIBSOURCES passwd_srv_yaml.c)
+set (YAMLFILE ops-passwd-srv.yaml)
+set (ETCPASSWD "/etc/ops-passwd-srv/")
 
 # Rules to build ops-passwd-srv
-add_executable ( ${PASSWDSRV} ${SOURCES} )
-target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
-                       ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
-                       -lpthread -lrt -lcrypt -lcrypto -lyaml)
+add_library(${LIBPASSWDSRV} SHARED ${LIBSOURCES})
+target_link_libraries(${LIBPASSWDSRV}  -lyaml)
 
 # Rules to install ops-passwd-srv binary in rootfs
-install(TARGETS ${PASSWDSRV}
-        RUNTIME DESTINATION bin)
-
-add_subdirectory(src/lib)
+install(DIRECTORY DESTINATION ${ETCPASSWD})
+install(FILES ${YAMLFILE} DESTINATION ${ETCPASSWD})
+install(TARGETS ${LIBPASSWDSRV} LIBRARY DESTINATION lib)
