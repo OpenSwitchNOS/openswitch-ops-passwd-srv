@@ -15,7 +15,7 @@
  */
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <crypt.h>
+#include <crypt.h> /* TODO: investigation needed to replace it with openssl */
 #include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
@@ -27,10 +27,13 @@
 #include <unistd.h>
 #include <grp.h>
 
+#include "openvswitch/vlog.h"
 #include "passwd_srv_pri.h"
 #include <openssl/rand.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+
+VLOG_DEFINE_THIS_MODULE(passwd_srv_util);
 
 /*
  *  Generate salt of size salt_size.
@@ -98,9 +101,9 @@ const char *generate_salt (size_t salt_size)
  * RSA_free() when you are done with it.
 */
 RSA *generate_RSA_keypair() {
-    RSA *rsa;
+    RSA *rsa = NULL;
     /* to hold the keypair to be generated */
-    BIGNUM *bne;
+    BIGNUM *bne = NULL;
     /* public exponent for RSA key generation */
     int ret, key_generate_failed=0;
     unsigned long e = RSA_F4;
@@ -108,6 +111,16 @@ RSA *generate_RSA_keypair() {
     /* BIO - openssl type, stands for Basic Input Output, serves as a wrapper
      * for a file pointer in many openssl functions */
     struct group *ovsdb_client_grp;
+    char *pub_key_path = NULL;
+
+    /*
+     * Get public key location from yaml
+     */
+    if (NULL == (pub_key_path = get_file_path(PASSWD_SRV_YAML_PATH_PUB_KEY)))
+    {
+        VLOG_ERR("Failed to get the location of public key storage");
+        goto cleanup;
+    }
 
     /* seed random number generator */
     RAND_poll();
@@ -116,7 +129,7 @@ RSA *generate_RSA_keypair() {
     bne = BN_new();
     ret = BN_set_word(bne, e);
     if (ret == 0) {
-        /* TODO: logging */
+        VLOG_ERR("Failed to generate private/public key");
         key_generate_failed = 1;
         goto cleanup;
     }
@@ -128,17 +141,17 @@ RSA *generate_RSA_keypair() {
     RSA_generate_key_ex(rsa, PASSWD_SRV_PUB_KEY_LEN, bne, NULL);
     if (ret != 1)
     {
-        /* TODO: logging */
+        VLOG_ERR("Failed to generate private/public key");
         key_generate_failed = 1;
         goto cleanup;
     }
 
     /* save public key to a file in PEM format */
-    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "wx");
+    bp_public = BIO_new_file(pub_key_path, "wx");
     ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
     if (ret != 1)
     {
-        /* TODO: logging */
+        VLOG_ERR("Failed to save public key");
         key_generate_failed = 1;
         goto cleanup;
 
@@ -159,7 +172,7 @@ cleanup:
     /* make the file readable by owner and group */
     umask(S_IRUSR | S_IWUSR | S_IRGRP);
     ovsdb_client_grp = getgrnam("ovsdb-client");
-    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+    chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
 
     /* Calling function must do RSA_free(rsa) when it is done with resource */
     return rsa;
@@ -244,15 +257,18 @@ struct spwd *create_user(const char *username, int useradd)
 
     if (0 > system(useradd_comm))
     {
+        memset(useradd_comm, 0, sizeof(useradd_comm));
         return NULL;
     }
 
     /* make sure that user has been created */
     if (useradd && NULL == (passwd_entry = find_password_info(username)))
     {
+        memset(useradd_comm, 0, sizeof(useradd_comm));
         return NULL;
     }
 
+    memset(useradd_comm, 0, sizeof(useradd_comm));
     return passwd_entry;
 }
 
@@ -434,7 +450,14 @@ int create_and_store_password(passwd_client_t *client)
     salt = create_new_salt();
     password = strdup(client->msg.newpasswd);
 
-    /* generate new password using crypt */
+    /*
+     * generate new password using crypt
+     *
+     * TODO: replace crypt() with openssl.
+     *       - investigate to implement logic with openssl to support
+     *          any encryption method defined in logins.def file
+     *          i.e. SHA512 is not supported by 'openssl passwd'
+     */
     newpassword = crypt(password, salt);
 
     /* store it to shadow file */
@@ -472,12 +495,12 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
             strlen(client->msg.username)))
     {
         /* sender is user who wants to change own password */
-        return 0;
+        return PASSWD_ERR_SUCCESS;
     }
     else if (0 == strncmp(user->pw_name, "ops", strlen("ops")))
     {
         /* sender is ops who wants to change user password */
-        return 0;
+        return PASSWD_ERR_SUCCESS;
     }
 
     return PASSWD_ERR_INVALID_USER;
@@ -494,6 +517,14 @@ int validate_password(passwd_client_t *client)
     char *crypt_str = NULL;
     int  err = 0;
 
+    /*
+    * TODO: replace crypt() with openssl.
+    *       - investigate to implement logic with openssl to support
+    *          any encryption method defined in logins.def file
+    *          i.e. SHA512 is not supported by 'openssl passwd'
+    *       - hashed password is in following format: $<method>$<salt>$<hashed string>
+    *       - investigate to use openssl to produce same hashed string
+    */
     if ((NULL == (crypt_str = crypt(client->msg.oldpasswd,
             client->passwd->sp_pwdp))) ||
         (0 != strncmp(crypt_str, client->passwd->sp_pwdp,
@@ -529,14 +560,14 @@ struct spwd *find_password_info(const char *username)
     /* lock /etc/shadow file to read */
     if (0 != lckpwdf())
     {
-        /* TODO: logging for failure */
+        VLOG_ERR("Failed to lock /usr/shadow file");
         return NULL;
     }
 
     /* open shadow file */
     if (NULL == (fpShadow = fopen(PASSWD_SHADOW_FILE, "r")))
     {
-        /* TODO: logging for failure */
+        VLOG_ERR("Failed to open /usr/shadow file");
         return NULL;
     }
 
@@ -553,7 +584,7 @@ struct spwd *find_password_info(const char *username)
             /* unlock shadow file */
             if (0 != ulckpwdf())
             {
-                /* TODO: logging for failure */
+                VLOG_DBG("Failed to unlock /usr/shadow file");
             }
             fclose(fpShadow);
             return password;
@@ -563,7 +594,7 @@ struct spwd *find_password_info(const char *username)
     /* unlock shadow file */
     if (0 != ulckpwdf())
     {
-       /* TODO: logging for failure */
+       VLOG_DBG("Failed to unlock /usr/shadow file");
     }
 
     fclose(fpShadow);
@@ -617,7 +648,7 @@ int process_client_request(passwd_client_t *client)
         /* make sure username does not exist */
         if (NULL != (client->passwd = find_password_info(client->msg.username)))
         {
-            /* TODO: logging error */
+            VLOG_ERR("User %s already exists", client->msg.username);
             return PASSWD_ERR_USER_EXIST;
         }
 
@@ -625,17 +656,18 @@ int process_client_request(passwd_client_t *client)
         if (NULL == (client->passwd = create_user(client->msg.username, TRUE)))
         {
             /* failed to create user or getting information from /etc/passwd */
+            VLOG_ERR("Failed to create a user");
             return PASSWD_ERR_USERADD_FAILED;
         }
 
         /* now add password for the user */
         if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
         {
-            printf("User was added successfully\n");
+            VLOG_INFO("User was added successfully");
         }
         else
         {
-            printf("User was not added successfully [error=%d]\n", error);
+            VLOG_INFO("User was not added successfully [error=%d]", error);
             /* delete user since it failed to add password */
             create_user(client->msg.username, FALSE);
         }
@@ -646,14 +678,14 @@ int process_client_request(passwd_client_t *client)
         /* make sure username does not exist */
         if (NULL == (client->passwd = find_password_info(client->msg.username)))
         {
-            /* TODO: logging error */
+            VLOG_INFO("User %s does not exist to delete", client->msg.username);
             return PASSWD_ERR_USER_NOT_FOUND;
         }
 
         /* delete user from /etc/passwd file */
         if (NULL != (client->passwd = create_user(client->msg.username, FALSE)))
         {
-            /* failed to create user or getting information from /etc/passwd */
+            VLOG_INFO("Failed to remove user %s", client->msg.username);
             return PASSWD_ERR_USERDEL_FAILED;
         }
 
@@ -667,100 +699,4 @@ int process_client_request(passwd_client_t *client)
     }
     }
     return error;
-}
-
-/**
- * Create ini file to expose variables defined in public header
- */
-int create_ini_file()
-{
-    FILE *fp = NULL;
-
-    if (NULL == (fp = fopen(PASSWD_SRV_INI_FILE, "w")))
-    {
-        /* TODO: logging */
-        return PASSWD_ERR_FATAL;
-    }
-
-    /* write public key file location */
-    fputs("# public key location\n", fp);
-    fputs("[pub_key_loc_type]\n", fp);
-    fputs("PASSWD_SRV_PUB_KEY_LOC_TYPE=string\n", fp);
-    fputs("\n", fp);
-    fputs("[pub_key_loc]\n", fp);
-    fprintf(fp, "PASSWD_SRV_PUB_KEY_LOC=%s\n", PASSWD_SRV_PUB_KEY_LOC);
-    fputs("\n", fp);
-
-    /* write socket descriptor location */
-    fputs("# server socket descriptor\n", fp);
-    fputs("[socket_fd_type]\n", fp);
-    fputs("PASSWD_SRV_SOCK_FD_TYPE=string\n", fp);
-    fputs("\n", fp);
-    fputs("[socket_fd_loc]\n", fp);
-    fprintf(fp, "PASSWD_SRV_SOCK_FD=%s\n", PASSWD_SRV_SOCK_FD);
-    fputs("\n", fp);
-
-    /* write opcode */
-    fputs("# message op code\n", fp);
-    fputs("[op_code_size]\n", fp);
-    fprintf(fp, "PASSWD_MSG_SIZE=%d\n", (int)sizeof(int));
-    fputs("\n", fp);
-    fputs("[op_code]\n", fp);
-    fprintf(fp, "PASSWD_MSG_CHG_PASSWORD=%d\n", PASSWD_MSG_CHG_PASSWORD);
-    fprintf(fp, "PASSWD_MSG_ADD_USER=%d\n", PASSWD_MSG_ADD_USER);
-    fputs("\n", fp);
-
-    /* write error codes */
-    fputs("# error code used by password server\n", fp);
-    fputs("[error_code_size]\n", fp);
-    fprintf(fp, "PASSWD_ERR_CODE_SIZE=%d\n", (int)sizeof(int));
-    fputs("[error_code]\n", fp);
-    fprintf(fp, "PASSWD_ERR_FATAL=%d\n", PASSWD_ERR_FATAL);
-    fprintf(fp, "PASSWD_ERR_SUCCESS=%d\n", PASSWD_ERR_SUCCESS);
-    fprintf(fp, "PASSWD_ERR_USER_NOT_FOUND=%d\n", PASSWD_ERR_USER_NOT_FOUND);
-    fprintf(fp, "PASSWD_ERR_PASSWORD_NOT_MATCH=%d\n", PASSWD_ERR_PASSWORD_NOT_MATCH);
-    fprintf(fp, "PASSWD_ERR_SHADOW_FILE=%d\n", PASSWD_ERR_SHADOW_FILE);
-    fprintf(fp, "PASSWD_ERR_INVALID_MSG=%d\n", PASSWD_ERR_INVALID_MSG);
-    fprintf(fp, "PASSWD_ERR_INSUFFICIENT_MEM=%d\n", PASSWD_ERR_INSUFFICIENT_MEM);
-    fprintf(fp, "PASSWD_ERR_INVALID_OPCODE=%d\n", PASSWD_ERR_INVALID_OPCODE);
-    fprintf(fp, "PASSWD_ERR_INVALID_USER=%d\n", PASSWD_ERR_INVALID_USER);
-    fprintf(fp, "PASSWD_ERR_INVALID_PARAM=%d\n", PASSWD_ERR_INVALID_PARAM);
-    fprintf(fp, "PASSWD_ERR_PASSWD_UPD_FAIL=%d\n", PASSWD_ERR_PASSWD_UPD_FAIL);
-    fprintf(fp, "PASSWD_ERR_SEND_FAILED=%d\n", PASSWD_ERR_SEND_FAILED);
-    fputs("\n", fp);
-
-    /* write message structure information */
-    fputs("# message structure information\n", fp);
-    fputs("\n", fp);
-
-    /* write opcode info */
-    fputs("# opcode\n", fp);
-    fputs("[op_code_msg]\n", fp);
-    fputs("PASSWD_SOCK_MSG_OPCODE_TYPE=integer\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_OPCODE_SIZE=%d\n", (int)sizeof(int));
-    fputs("\n", fp);
-
-    /* write username info */
-    fputs("# username info\n", fp);
-    fputs("[msg_username]\n", fp);
-    fputs("PASSWD_SOCK_MSG_UNAME_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_UNAME_SIZE=%d\n", PASSWD_USERNAME_SIZE);
-    fputs("\n", fp);
-
-    /* write old password info */
-    fputs("# password info\n", fp);
-    fputs("[msg_old_password]\n", fp);
-    fputs("PASSWD_SOCK_MSG_OLDPASS_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_OLDPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
-    fputs("\n", fp);
-
-    /* write new password info */
-    fputs("# password info\n", fp);
-    fputs("[msg_new_password]\n", fp);
-    fputs("PASSWD_SOCK_MSG_NEWPASS_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_NEWPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
-    fputs("\n", fp);
-
-    fclose(fp);
-    return 0;
 }
