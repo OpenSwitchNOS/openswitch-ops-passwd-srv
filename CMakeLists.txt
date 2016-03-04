@@ -27,19 +27,27 @@ pkg_check_modules(CONFIG_YAML REQUIRED ops-config-yaml)
 pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
 pkg_check_modules(OVSDB REQUIRED libovsdb)
 
-include_directories (${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/${INCL_DIR}
-                     ${OVSCOMMON_INCLUDE_DIRS}
+include_directories (
+    ${PROJECT_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/${INCL_DIR}
+    ${OVSCOMMON_INCLUDE_DIRS}
 )
 
 # Source files to build ops-passwd-srv
-set (SOURCES passwd_srv.c)
+set (SOURCES
+    ${PROJECT_SOURCE_DIR}/src/passwd_srvd.c
+    ${SRC_DIR}/passwd_srv_conn.c
+    ${SRC_DIR}/passwd_srv_util.c
+)
 
 # Rules to build ops-passwd-srv
-add_executable (${PASSWDSRV} ${SOURCES})
+add_executable ( ${PASSWDSRV}
+    ${SOURCES}
+)
 
 target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
                        ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
-                       -lpthread -lrt)
+                       -lpthread -lrt -lcrypt)
 
 # Rules to install ops-passwd-srv binary in rootfs
 install(TARGETS ${PASSWDSRV}
