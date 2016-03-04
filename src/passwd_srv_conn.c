@@ -22,17 +22,18 @@
 
 #include <syslog.h>
 #include <stdio.h>
-#include <crypt.h>
 #include <string.h>
 #include <stdlib.h>
 
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include "openvswitch/vlog.h"
 #include "passwd_srv_pri.h"
 
 #include <pwd.h>
 
+VLOG_DEFINE_THIS_MODULE(passwd_srv_conn);
 
 /*
  * Using socket provided, send MSG back to client. MSG going back is the status
@@ -60,7 +61,7 @@ send_msg_to_client(int client_socket, int msg)
         if (0 > (err =
                 send(client_socket, msgBuf, sizeof(int), MSG_DONTROUTE)))
         {
-            /* TODO: logging for failure */
+            VLOG_ERR("Failed to send message to the client");
             return PASSWD_ERR_SEND_FAILED;
         }
 
@@ -86,7 +87,8 @@ void listen_socket(RSA *keypair)
     int                ret;
     int fdSocket = 0, size = 0, storage_size = 0;
     struct sockaddr_storage sock_storage;
-    char   filemode[] = "0777";
+    char   filemode[] = "0766";
+    char   *sock_file = NULL;
     unsigned char *enc_msg;
     unsigned char *dec_msg;
     passwd_client_t client;
@@ -97,20 +99,29 @@ void listen_socket(RSA *keypair)
     dec_msg = (unsigned char *)malloc(RSA_size(keypair));
     if (!(enc_msg && dec_msg)) /* both mallocs must be succesful to proceed */
     {
-        exit(1);    // is this sufficient?
+        VLOG_ERR("Memory allocation failure");
+        exit(PASSWD_ERR_FATAL);
     }
 
     memset(&unix_sockaddr, 0, sizeof(unix_sockaddr));
     memset(&client, 0, sizeof(client));
 
+    /* get the socket location from yaml */
+    if (NULL == (sock_file = get_file_path(PASSWD_SRV_YAML_PATH_SOCK)))
+    {
+        /* couldn't find socket location from yaml */
+        VLOG_ERR("Cannot find socket descriptor location");
+        exit(PASSWD_ERR_FATAL);
+    }
+
     /* setup sockaddr to create socket */
     unix_sockaddr.sun_family = AF_UNIX;
-    strncpy(unix_sockaddr.sun_path, PASSWD_SRV_SOCK_FD, strlen(PASSWD_SRV_SOCK_FD));
+    strncpy(unix_sockaddr.sun_path, sock_file, strlen(sock_file));
 
     /* create a socket */
     if (0 > (fdSocket = socket(AF_UNIX, SOCK_STREAM, 0)))
     {
-        /* TODO: logging for failure */
+        VLOG_ERR("Cannot find socket descriptor location");
         return;
     }
 
@@ -120,12 +131,12 @@ void listen_socket(RSA *keypair)
 
     if (0 > (err = bind(fdSocket, (struct sockaddr *)&unix_sockaddr, size)))
     {
-        /* TODO: logging for failure */
+        VLOG_ERR("Cannot bind to socket %s", unix_sockaddr.sun_path);
         return;
     }
 
     fmode = strtol(filemode, 0, 8);
-    chmod(PASSWD_SRV_SOCK_FD, fmode);
+    chmod(sock_file, fmode);
     storage_size = sizeof(sock_storage);
 
     memset(&client_sockaddr, 0, sizeof(client_sockaddr));
@@ -133,7 +144,7 @@ void listen_socket(RSA *keypair)
     /* initiate the socket listen */
     if (0 > (err = listen(fdSocket, 3)))
     {
-        /* TODO: logging for failure */
+        VLOG_ERR("Failed to initiate a socket listen");
         return;
     }
 
@@ -149,8 +160,8 @@ void listen_socket(RSA *keypair)
                 accept(fdSocket, (struct sockaddr *)&client_sockaddr,
                 (socklen_t *)&size)))
         {
-            /* TODO: logging for failure */
-            exit(1);
+            VLOG_ERR("Fail to connect with the client");
+            exit(PASSWD_ERR_FATAL);
         }
 
         /* get client-socket information */
@@ -167,7 +178,7 @@ void listen_socket(RSA *keypair)
 
         if (-1 == recv(socket_client, enc_msg, RSA_size(keypair), MSG_PEEK))
         {
-            /* TODO: logging for failure */
+            VLOG_ERR("Failed to retrieve the message from the client");
             send_msg_to_client(socket_client, PASSWD_ERR_RECV_FAILED);
             shutdown(socket_client, SHUT_WR);
             continue;
