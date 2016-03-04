@@ -98,9 +98,9 @@ const char *generate_salt (size_t salt_size)
  * RSA_free() when you are done with it.
 */
 RSA *generate_RSA_keypair() {
-    RSA *rsa;
+    RSA *rsa = NULL;
     /* to hold the keypair to be generated */
-    BIGNUM *bne;
+    BIGNUM *bne = NULL;
     /* public exponent for RSA key generation */
     int ret, key_generate_failed=0;
     unsigned long e = RSA_F4;
@@ -108,6 +108,16 @@ RSA *generate_RSA_keypair() {
     /* BIO - openssl type, stands for Basic Input Output, serves as a wrapper
      * for a file pointer in many openssl functions */
     struct group *ovsdb_client_grp;
+    char *pub_key_path = NULL;
+
+    /*
+     * Get public key location from yaml
+     */
+    if (NULL == (pub_key_path = get_file_path(PASSWD_SRV_YAML_PATH_PUB_KEY)))
+    {
+        /* TODO: log about the failure */
+        goto cleanup;
+    }
 
     /* seed random number generator */
     RAND_poll();
@@ -134,7 +144,7 @@ RSA *generate_RSA_keypair() {
     }
 
     /* save public key to a file in PEM format */
-    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "wx");
+    bp_public = BIO_new_file(pub_key_path, "wx");
     ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
     if (ret != 1)
     {
@@ -159,7 +169,7 @@ cleanup:
     /* make the file readable by owner and group */
     umask(S_IRUSR | S_IWUSR | S_IRGRP);
     ovsdb_client_grp = getgrnam("ovsdb-client");
-    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+    chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
 
     /* Calling function must do RSA_free(rsa) when it is done with resource */
     return rsa;
@@ -668,6 +678,7 @@ int process_client_request(passwd_client_t *client)
     }
     return error;
 }
+
 
 /**
  * Create ini file to expose variables defined in public header
