@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
     daemonize_start();
 
     create_directory();
-    create_ini_file();
+    parse_passwd_srv_yaml();
 
     /* Notify parent of startup completion. */
     daemonize_complete();
@@ -193,7 +193,6 @@ int main(int argc, char **argv) {
     /* TODO: initialize event log */
     // event_log_init("PASSWD");
     /* TODO: initialize vlog */
-
 
     /* generate RSA keypair and create pubkey file */
     rsa = generate_RSA_keypair();
