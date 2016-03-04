@@ -8,6 +8,9 @@ OPS-PASSWD-SRV
 - [Relationships to external OpenSwitch entities](#relationships-to-external-openswitch-entities)
 - [Internal structure](#internal-structure)
 - [Message format] (#message format)
+- [Opcode]  (#operation-code)
+- [Error code format] (#error-code-format)
+- [Location of socket/pub key] (#socket-descriptor-and-public-key-location)
 
 ##High level design of password server
 
@@ -35,7 +38,6 @@ The main responsibilities of the Password Server are:
 * Update user password in the /etc/shadow file
 * Create private/public keys for the password encryption/decryption
 * Create and maintain socket to connect with clients
-* Create ini file to store global variables
 * Provide password validation
 
 ##Design choices
@@ -68,8 +70,8 @@ Upon start of the password server, it
     daemonize_complete() is done, the password server creates and listens on
     the socket.  Key generation must happen prior to the socket operation.
 - stores a public key in the filesystem
-   - The location of public key is defined in a public header as
-     PASSWD_SRV_PUB_KEY_LOC.
+   - The location of public key is defined in a YAML file specified in
+     the section 'Location of socket/pub key'
    - a public key is stored as an immutable file which only root user can
      delete or move after a immutable bit is unset
 - stores a private key within the password server memory
@@ -78,9 +80,10 @@ Upon start of the password server, it
 - creates the socket and starts to listen on the socket for incoming connections
    - The location of socket decriptor is defined in public header as
      PASSWD_SRV_SOCK_FD.
-- creates /etc/ops-passwd-srv.ini to store global variables defined in public
-  header file. This allows programs that don't have access to the public header
-  file to retrieve global variables.
+- read '/etc/ops-passwd-srv/ops-passwd-srv.yaml' to know the file path
+   - YAML file contains socket descriptor and public key location
+   - both the public key storage and socket descriptor location are retrieved
+   		during password server boot-time
 
 Below describes the client to password server conversation:
 1. Client daemon gets user information
@@ -180,3 +183,94 @@ message format to send user information:
  +--------------------------------------------------------+
  |          status code (error code)      |   4           |
  +--------------------------------------------------------+
+
+##operation code
+Operation code (opcode) is used by both a client and the password server.
+The password server performs the password related action based on the opcode.
+
+The opcode is 4 byte integer value. Below is the list of opcodes:
+ +-----------------------------------------------------------------------------+
+ | opcode name             | opcode | Description                              |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_MSG_CHG_PASSWORD | 1      | change password for a given user         |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_MSG_ADD_USER     | 2      | create a new user                        |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_MSG_DEL_USER     | 3      | delete a given user                      |
+ +-----------------------------------------------------------------------------+
+
+## error code format
+After the password server processes a request from the client, it sends an error
+code back to the client to inform about the operation status.
+
+The error code is 4 byte integer value and below describes the error code definition:
+
+ +-----------------------------------------------------------------------------+
+ | error code name               | opcode | Description                        |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_FATAL              | -1     | fatal error                        |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_SUCCESS            |  0     | operation is successfully done     |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_USER_NOT_FOUND     |  1     | a given user is not found          |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_PASSWORD_NOT_MATCH |  2     | invalid old password               |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_SHADOW_FILE        |  3     | cannot access shadow file          |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_INVALID_MSG        |  4     | invalid message format             |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_INSUFFICIENT_MEM   |  5     | out of memory error                |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_RECV_FAILED        |  6     | receive message failed             |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_INVALID_OPCODE     |  7     | unknown opcode                     |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_INVALID_USER       |  8     | invalid user info                  |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_INVALID_PARAM      |  9     | invalid parameter is used          |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_PASSWD_UPD_FAIL    | 10     | password update failed             |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_SEND_FAILED        | 11     | fail to send message to the client |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_USERADD_FAILED     | 12     | fail to add a user                 |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_USER_EXIST         | 13     | a given user already exists        |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_USERDEL_FAILED     | 14     | fail to delete user                |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_DECRYPT_FAILED     | 15     | fail to decrypt the message        |
+ +-----------------------------------------------------------------------------+
+ | PASSWD_ERR_YAML_FILE          | 16     | cannot access YAML file            |
+ +-----------------------------------------------------------------------------+
+
+## socket descriptor and public key location
+For the client to communicate with the password server, it needs to open a UNIX
+socket and send an encrypted message (using public key provided).
+
+To get the information about the socket descriptor and public key location,
+the client program must parse the YAML file to extract such information.
+YAML file contains the location of socket descriptor and public key.
+
+YAML formatted file is stored in /etc/ops-password-srv/ops-passwd-srv.yaml.
+
+YAML file contains following information:
+ +--------------------------------------------------------+
+ | Field name      |  Description                         |
+ +--------------------------------------------------------+
+ | type            | the describes a type of file         |
+ |                 | - SOCKET  : UNIX socket descriptor   |
+ |                 | - PUB_KEY : public key               |
+ +--------------------------------------------------------+
+ | path            | file location in the filesystem      |
+ +--------------------------------------------------------+
+ | description     | description of file                  |
+ +--------------------------------------------------------+
+
+ The type 'SOCKET' depicts the socket descriptor which is used by the client
+ to create a connection with the password server using UNIX socket.
+
+ The type 'PUB_KEY' stores the location of a public key which the password server
+ generates at start-up.  The public key is used by the client to encrypt a
+ request.

@@ -34,40 +34,27 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-
-#include <shadow.h>
-
-#include <syslog.h>
 #include <stdio.h>
-#include <crypt.h>
-#include <string.h>
 
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <grp.h>
 
-//#include "openvswitch/vlog.h"
-
 #include <util.h>
-
 #include <daemon.h>
 #include <dirs.h>
 #include <unixctl.h>
 #include <fatal-signal.h>
 #include <command-line.h>
-#include <vswitch-idl.h>
-#include <openvswitch/vlog.h>
+#include "openvswitch/vlog.h"
 
 //#include "eventlog.h"
 #include "passwd_srv_pri.h"
 
 #include <openssl/rsa.h>
-//VLOG_DEFINE_THIS_MODULE(passwd-srv);
+VLOG_DEFINE_THIS_MODULE(passwd_srvd);
 #define __USE_XOPEN_EXTENDED
 #include "/usr/include/ftw.h"
 
@@ -145,24 +132,20 @@ create_directory()
     struct stat f_stat = {0};
     struct group *passwd_grp;
 
-    passwd_grp = getgrnam(PASSWD_GROUP);
+    /* set group to be ovsdb_group */
+    passwd_grp = getgrnam(OVSDB_GROUP);
     setgid(passwd_grp->gr_gid);
 
-    if (0 == stat(PASSWD_RUN_DIR, &f_stat))
+    if ((0 == stat(PASSWD_RUN_DIR, &f_stat)) && (0 != remove(PASSWD_RUN_DIR)))
     {
-        if (0 == remove(PASSWD_RUN_DIR))
+        /*
+         * failed to remove directory, try to clean up directory recursively
+         * i.e. equivalent to 'rm -R PASSWD_RUN_DIR'
+         */
+        if (0 != nftw(PASSWD_RUN_DIR, _delete_helper, 5, FTW_DEPTH | FTW_PHYS))
         {
-            ;
-        }
-        else if (0 == nftw(PASSWD_RUN_DIR, _delete_helper, 5, FTW_DEPTH | FTW_PHYS))
-        {
-            ;
-        }
-        else
-        {
-            /* unable to delete directory or file */
-            /* TODO: logging */
-            exit(-1);
+            /* unable to delete the directory */
+            exit(PASSWD_ERR_FATAL);
         }
     }
 
@@ -172,7 +155,8 @@ create_directory()
 
 /* password server main function */
 int main(int argc, char **argv) {
-    RSA *rsa;
+    RSA *rsa = NULL;
+
     set_program_name(argv[0]);
     proctitle_init(argc, argv);
     fatal_ignore_sigpipe();
@@ -180,20 +164,27 @@ int main(int argc, char **argv) {
     /* assign program name */
     passwd_srv_parse_options(argc, argv, NULL);
 
-    /* Fork and return in child process; but don't notify parent of
-     * startup completion yet. */
+    /*
+     * Fork and return in child process; but don't notify parent of
+     * startup completion yet.
+     *
+     * Process is forked by systemd daemon to monitor the process.
+     */
     daemonize_start();
 
     create_directory();
-    create_ini_file();
+
+    if (PASSWD_ERR_SUCCESS != parse_passwd_srv_yaml())
+    {
+        /* failed to parse yaml file */
+        exit(PASSWD_ERR_FATAL);
+    }
 
     /* Notify parent of startup completion. */
     daemonize_complete();
 
-    /* TODO: initialize event log */
-    // event_log_init("PASSWD");
-    /* TODO: initialize vlog */
-
+    /* init vlog */
+    vlog_enable_async();
 
     /* generate RSA keypair and create pubkey file */
     rsa = generate_RSA_keypair();
@@ -204,5 +195,5 @@ int main(int argc, char **argv) {
     // do we need signal handling?
     RSA_free(rsa);
 
-    return 0;
+    return PASSWD_ERR_SUCCESS;
 }
