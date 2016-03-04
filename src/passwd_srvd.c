@@ -145,7 +145,7 @@ create_directory()
     struct stat f_stat = {0};
     struct group *passwd_grp;
 
-    passwd_grp = getgrnam(PASSWD_GROUP);
+    passwd_grp = getgrnam(OVSDB_GROUP);
     setgid(passwd_grp->gr_gid);
 
     if (0 == stat(PASSWD_RUN_DIR, &f_stat))
@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
     daemonize_start();
 
     create_directory();
-    create_ini_file();
+    parse_passwd_srv_yaml();
 
     /* Notify parent of startup completion. */
     daemonize_complete();
@@ -193,7 +193,6 @@ int main(int argc, char **argv) {
     /* TODO: initialize event log */
     // event_log_init("PASSWD");
     /* TODO: initialize vlog */
-
 
     /* generate RSA keypair and create pubkey file */
     rsa = generate_RSA_keypair();

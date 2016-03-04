@@ -17,10 +17,12 @@
 #ifndef PASSWD_SRV_PRI_H_
 #define PASSWD_SRV_PRI_H_
 
-#include "passwd_srv_pub.h"
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <sys/un.h>
+
+#include "passwd_srv_pub.h"
 
 #define TRUE  1
 #define FALSE 0
@@ -29,20 +31,20 @@
 #define PASSWD_SHADOW_FILE   "/etc/shadow"      /* file with password info */
 #define PASSWD_GROUP_FILE    "/etc/group"       /* file with group info */
 #define PASSWD_LOGIN_FILE    "/etc/login.defs"  /* encryption method stored */
-#define PASSWD_GROUP         "ovsdb-client"
 
 #define PASSWD_RUN_DIR       "/var/run/ops-passwd-srv"
 #define PASSWD_SRV_PRI_KEY_LOC \
     "/var/run/ops-passwd-srv/ops-passwd-srv-pri.pem" /*private key loc*/
 
-#define PASSWD_SRV_INI_FILE "/etc/ops-passwd-srv.ini"
+#define PASSWD_SRV_YAML_KEY_MAX 2
 
 /**
  * defines for adding user
- * defect #151
+ * defect #151 : support useradd
+ * userdel for
+ *
  */
 #define USERADD "/usr/sbin/useradd"
-#define USERMOD "/usr/sbin/usermod"
 #define OVSDB_GROUP "ovsdb-client"
 #define NETOP_GROUP "ops_netop"
 #define VTYSH_PROMPT "/usr/bin/vtysh"
@@ -50,7 +52,7 @@
 #define USER_NAME_MAX_LENGTH 32
 
 /*
- * password server user-object datat structure
+ * password server user-object data structure
  */
 typedef struct passwd_client
 {
@@ -58,13 +60,6 @@ typedef struct passwd_client
     passwd_srv_msg_t msg; 	  /* MSG from client */
     struct spwd      *passwd; /* shadow file password structure */
 } passwd_client_t;
-
-enum PASSWD_error_code_e {
-    PASSWD_ERR_OK = 0x0,
-    PASSWD_ERR_UNKNOWN_ERROR,
-    PASSWD_ERR_INVALID_SOCKET,
-    PASSWD_ERR_MAX
-};
 
 /*
  * password server internal APIs
@@ -79,7 +74,6 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);
 
 int create_and_store_password(passwd_client_t *client);
 struct spwd *find_password_info(const char *username);
-int create_ini_file();
 
 RSA *generate_RSA_keypair();
 
