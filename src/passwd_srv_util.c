@@ -98,9 +98,9 @@ const char *generate_salt (size_t salt_size)
  * RSA_free() when you are done with it.
 */
 RSA *generate_RSA_keypair() {
-    RSA *rsa;
+    RSA *rsa = NULL;
     /* to hold the keypair to be generated */
-    BIGNUM *bne;
+    BIGNUM *bne = NULL;
     /* public exponent for RSA key generation */
     int ret, key_generate_failed=0;
     unsigned long e = RSA_F4;
@@ -108,6 +108,16 @@ RSA *generate_RSA_keypair() {
     /* BIO - openssl type, stands for Basic Input Output, serves as a wrapper
      * for a file pointer in many openssl functions */
     struct group *ovsdb_client_grp;
+    char *pub_key_path = NULL;
+
+    /*
+     * Get public key location from yaml
+     */
+    if (NULL == (pub_key_path = get_file_path(PASSWD_SRV_YAML_PATH_PUB_KEY)))
+    {
+        /* TODO: log about the failure */
+        goto cleanup;
+    }
 
     /* seed random number generator */
     RAND_poll();
@@ -134,7 +144,7 @@ RSA *generate_RSA_keypair() {
     }
 
     /* save public key to a file in PEM format */
-    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "wx");
+    bp_public = BIO_new_file(pub_key_path, "wx");
     ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
     if (ret != 1)
     {
@@ -159,7 +169,7 @@ cleanup:
     /* make the file readable by owner and group */
     umask(S_IRUSR | S_IWUSR | S_IRGRP);
     ovsdb_client_grp = getgrnam("ovsdb-client");
-    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+    chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
 
     /* Calling function must do RSA_free(rsa) when it is done with resource */
     return rsa;
@@ -667,100 +677,4 @@ int process_client_request(passwd_client_t *client)
     }
     }
     return error;
-}
-
-/**
- * Create ini file to expose variables defined in public header
- */
-int create_ini_file()
-{
-    FILE *fp = NULL;
-
-    if (NULL == (fp = fopen(PASSWD_SRV_INI_FILE, "w")))
-    {
-        /* TODO: logging */
-        return PASSWD_ERR_FATAL;
-    }
-
-    /* write public key file location */
-    fputs("# public key location\n", fp);
-    fputs("[pub_key_loc_type]\n", fp);
-    fputs("PASSWD_SRV_PUB_KEY_LOC_TYPE=string\n", fp);
-    fputs("\n", fp);
-    fputs("[pub_key_loc]\n", fp);
-    fprintf(fp, "PASSWD_SRV_PUB_KEY_LOC=%s\n", PASSWD_SRV_PUB_KEY_LOC);
-    fputs("\n", fp);
-
-    /* write socket descriptor location */
-    fputs("# server socket descriptor\n", fp);
-    fputs("[socket_fd_type]\n", fp);
-    fputs("PASSWD_SRV_SOCK_FD_TYPE=string\n", fp);
-    fputs("\n", fp);
-    fputs("[socket_fd_loc]\n", fp);
-    fprintf(fp, "PASSWD_SRV_SOCK_FD=%s\n", PASSWD_SRV_SOCK_FD);
-    fputs("\n", fp);
-
-    /* write opcode */
-    fputs("# message op code\n", fp);
-    fputs("[op_code_size]\n", fp);
-    fprintf(fp, "PASSWD_MSG_SIZE=%d\n", (int)sizeof(int));
-    fputs("\n", fp);
-    fputs("[op_code]\n", fp);
-    fprintf(fp, "PASSWD_MSG_CHG_PASSWORD=%d\n", PASSWD_MSG_CHG_PASSWORD);
-    fprintf(fp, "PASSWD_MSG_ADD_USER=%d\n", PASSWD_MSG_ADD_USER);
-    fputs("\n", fp);
-
-    /* write error codes */
-    fputs("# error code used by password server\n", fp);
-    fputs("[error_code_size]\n", fp);
-    fprintf(fp, "PASSWD_ERR_CODE_SIZE=%d\n", (int)sizeof(int));
-    fputs("[error_code]\n", fp);
-    fprintf(fp, "PASSWD_ERR_FATAL=%d\n", PASSWD_ERR_FATAL);
-    fprintf(fp, "PASSWD_ERR_SUCCESS=%d\n", PASSWD_ERR_SUCCESS);
-    fprintf(fp, "PASSWD_ERR_USER_NOT_FOUND=%d\n", PASSWD_ERR_USER_NOT_FOUND);
-    fprintf(fp, "PASSWD_ERR_PASSWORD_NOT_MATCH=%d\n", PASSWD_ERR_PASSWORD_NOT_MATCH);
-    fprintf(fp, "PASSWD_ERR_SHADOW_FILE=%d\n", PASSWD_ERR_SHADOW_FILE);
-    fprintf(fp, "PASSWD_ERR_INVALID_MSG=%d\n", PASSWD_ERR_INVALID_MSG);
-    fprintf(fp, "PASSWD_ERR_INSUFFICIENT_MEM=%d\n", PASSWD_ERR_INSUFFICIENT_MEM);
-    fprintf(fp, "PASSWD_ERR_INVALID_OPCODE=%d\n", PASSWD_ERR_INVALID_OPCODE);
-    fprintf(fp, "PASSWD_ERR_INVALID_USER=%d\n", PASSWD_ERR_INVALID_USER);
-    fprintf(fp, "PASSWD_ERR_INVALID_PARAM=%d\n", PASSWD_ERR_INVALID_PARAM);
-    fprintf(fp, "PASSWD_ERR_PASSWD_UPD_FAIL=%d\n", PASSWD_ERR_PASSWD_UPD_FAIL);
-    fprintf(fp, "PASSWD_ERR_SEND_FAILED=%d\n", PASSWD_ERR_SEND_FAILED);
-    fputs("\n", fp);
-
-    /* write message structure information */
-    fputs("# message structure information\n", fp);
-    fputs("\n", fp);
-
-    /* write opcode info */
-    fputs("# opcode\n", fp);
-    fputs("[op_code_msg]\n", fp);
-    fputs("PASSWD_SOCK_MSG_OPCODE_TYPE=integer\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_OPCODE_SIZE=%d\n", (int)sizeof(int));
-    fputs("\n", fp);
-
-    /* write username info */
-    fputs("# username info\n", fp);
-    fputs("[msg_username]\n", fp);
-    fputs("PASSWD_SOCK_MSG_UNAME_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_UNAME_SIZE=%d\n", PASSWD_USERNAME_SIZE);
-    fputs("\n", fp);
-
-    /* write old password info */
-    fputs("# password info\n", fp);
-    fputs("[msg_old_password]\n", fp);
-    fputs("PASSWD_SOCK_MSG_OLDPASS_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_OLDPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
-    fputs("\n", fp);
-
-    /* write new password info */
-    fputs("# password info\n", fp);
-    fputs("[msg_new_password]\n", fp);
-    fputs("PASSWD_SOCK_MSG_NEWPASS_TYPE=string\n", fp);
-    fprintf(fp, "PASSWD_SOCK_MSG_NEWPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
-    fputs("\n", fp);
-
-    fclose(fp);
-    return 0;
 }
