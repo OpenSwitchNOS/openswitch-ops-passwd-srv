@@ -20,10 +20,11 @@
 /*
  * global definitions
  */
-#define PASSWD_SRV_SOCK_FD   "/tmp/passwd-srv.sock" /* socket descriptor */
+#define PASSWD_SRV_SOCK_FD   "/var/ops-passwd-srv.sock" /* socket descriptor */
 #define PASSWD_USERNAME_SIZE 50                         /* size of username */
 #define PASSWD_PASSWORD_SIZE 50                         /* size of password */
-
+#define PASSWD_SRV_FP_SIZE   255
+#define PASSWD_SRV_PUB_KEY_LOC "/var/ops-passwd-srv-pub.pem" /* public key loc*/
 
 /*
  * Message type definition
@@ -65,6 +66,7 @@ typedef struct passwd_srv_msg {
 	char username[PASSWD_USERNAME_SIZE];
 	char oldpasswd[PASSWD_PASSWORD_SIZE];
 	char newpasswd[PASSWD_PASSWORD_SIZE];
+	char file_path[PASSWD_SRV_FP_SIZE];
 } passwd_srv_msg_t;
 
 

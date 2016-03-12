@@ -40,6 +40,8 @@ static char *crypt_method = NULL;
 
 /*
  * RNG function to generate seed to make salt
+ *
+ * @param reset whether API needs to re-seed
  */
 static
 void create_seed (int reset)
@@ -91,7 +93,7 @@ const char *generate_salt (size_t salt_size)
  * The size of the salt string is between 8 and 16 bytes for the SHA crypt
  * methods.
  */
-static size_t SHA_salt_size (void)
+static size_t SHA_salt_size ()
 {
     double rand_size;
     create_seed (0);
@@ -137,6 +139,11 @@ char *search_login_defs(const char *target)
     return NULL;
 }
 
+/**
+ * Look into login.defs file to find encryption method
+ *  If encrypt_method is not found, hashing algorighm
+ *  falls back to MD5 or DES.
+ */
 static
 void find_encrypt_method()
 {
@@ -344,21 +351,27 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
     memset(&c_stat, 0, sizeof(c_stat));
 
     /* call stat() to get user information */
-    stat(sockaddr->sun_path, &c_stat);
+    stat((const char*)client->msg.file_path, &c_stat);
 
     if (NULL == (user = getpwuid(c_stat.st_uid)))
     {
-        return -1;
+        return PASSWD_ERR_INVALID_USER;
     }
 
     /* user is found, compare with client info */
-    if (0 != strncmp(user->pw_name, client->msg.username,
+    if (0 == strncmp(user->pw_name, client->msg.username,
             strlen(client->msg.username)))
     {
-        return -1;
+        /* sender is user who wants to change own password */
+        return 0;
+    }
+    else if (0 == strncmp(user->pw_name, "ops", strlen("ops")))
+    {
+        /* sender is ops who wants to change user password */
+        return 0;
     }
 
-    return 0;
+    return PASSWD_ERR_INVALID_USER;
 }
 
 /**
@@ -377,7 +390,7 @@ int validate_password(passwd_client_t *client)
         (0 != strncmp(crypt_str, client->passwd->sp_pwdp,
                 strlen(client->passwd->sp_pwdp))))
     {
-        err = -1;
+        err = PASSWD_ERR_FATAL;
     }
 
     if (NULL != crypt_str)

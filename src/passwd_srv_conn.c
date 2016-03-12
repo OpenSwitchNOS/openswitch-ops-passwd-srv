@@ -76,7 +76,7 @@ send_msg_to_client(int client_socket, int msg)
  *
  *  @param socket_server socket descriptor created to listen
  */
-void listen_socket(int socket_server)
+void listen_socket()
 {
     struct sockaddr_un unix_sockaddr;
     struct sockaddr_un client_sockaddr;
@@ -162,6 +162,7 @@ void listen_socket(int socket_server)
             /* TODO: logging for failure */
             send_msg_to_client(socket_client, PASSWD_ERR_INVALID_USER);
             shutdown(socket_client, SHUT_WR);
+            close(socket_client);
             continue;
         }
 
@@ -170,7 +171,7 @@ void listen_socket(int socket_server)
 
         if (PASSWD_ERR_SUCCESS == err)
         {
-            printf("Password updated successfully for user");
+            printf("Password updated successfully for user\n");
         }
         else
         {
@@ -179,6 +180,7 @@ void listen_socket(int socket_server)
 
         send_msg_to_client(socket_client, err);
         shutdown(socket_client, SHUT_WR);
+        close(socket_client);
 
         /* clean up */
         memset(&client, 0, sizeof(client));
