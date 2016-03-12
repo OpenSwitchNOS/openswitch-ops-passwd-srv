@@ -24,6 +24,9 @@
 #define PASSWD_GROUP_FILE    "/etc/group"       /* file with group info */
 #define PASSWD_LOGIN_FILE    "/etc/login.defs"  /* encryption method stored */
 
+#define PASSWD_SRV_PRI_KEY_LOC \
+    "/var/run/ops-passwd-srv/ops-passwd-srv-pri.pem" /*private key loc*/
+
 /*
  * password server user-object datat structure
  */
@@ -47,7 +50,7 @@ enum PASSWD_error_code_e {
 int process_client_request(passwd_client_t *client);
 
 int create_socket();
-void listen_socket(int socket_server);
+void listen_socket();
 
 int validate_password(passwd_client_t *client);
 int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);

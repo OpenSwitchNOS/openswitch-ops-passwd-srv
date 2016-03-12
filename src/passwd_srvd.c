@@ -45,11 +45,11 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #include <limits.h>
 
 //#include "openvswitch/vlog.h"
 
-#if 0
 #include <util.h>
 
 #include <daemon.h>
@@ -60,62 +60,34 @@
 #include <vswitch-idl.h>
 #include <openvswitch/vlog.h>
 
-#include <pm_cmn.h>
-#include <lacp_cmn.h>
-#include <mlacp_debug.h>
-
-#include "lacp.h"
-#include "mlacp_fproto.h"
-#include "lacp_ops_if.h"
-#endif
-
+#include "eventlog.h"
 #include "passwd_srv_pri.h"
-
-static char *program_name = "";
-//static char *version = "ops-passwd-srv " VERSION;
 
 //VLOG_DEFINE_THIS_MODULE(passwd-srv);
 
-#if NOTYET
-/**
- * password server usage help function.
- *
- */
-static void
-usage(void)
-{
-    printf("%s: OpenSwitch Password Server daemon\n"
-           "usage: %s [OPTIONS] [DATABASE]\n"
-           "where DATABASE is a socket on which ovsdb-server is listening\n"
-           "      (default: \"unix:%s/db.sock\").\n",
-           program_name, program_name, ovs_rundir());
-    daemon_usage();
-    vlog_usage();
-    printf("\nOther options:\n"
-           "  --unixctl=SOCKET        override default control socket name\n"
-           "  -h, --help              display this help message\n");
-    exit(EXIT_SUCCESS);
-} /* usage */
-
 static char *
-parse_options(int argc, char *argv[], char **unixctl_pathp)
+passwd_srv_parse_options(int argc, char *argv[], char **unixctl_pathp)
 {
     enum {
         OPT_UNIXCTL = UCHAR_MAX + 1,
         VLOG_OPTION_ENUMS,
         DAEMON_OPTION_ENUMS,
+        OVSDB_OPTIONS_END,
     };
+
     static const struct option long_options[] = {
-        {"help",        no_argument, NULL, 'h'},
-        {"unixctl",     required_argument, NULL, OPT_UNIXCTL},
+        {"help", no_argument, NULL, 'h'},
+        {"unixctl", required_argument, NULL, OPT_UNIXCTL},
         DAEMON_LONG_OPTIONS,
         VLOG_LONG_OPTIONS,
+        {"ovsdb-options-end", optional_argument, NULL, OVSDB_OPTIONS_END},
         {NULL, 0, NULL, 0},
     };
     char *short_options = long_options_to_short_options(long_options);
 
     for (;;) {
         int c;
+        int end_options = 0;
 
         c = getopt_long(argc, argv, short_options, long_options, NULL);
         if (c == -1) {
@@ -123,58 +95,75 @@ parse_options(int argc, char *argv[], char **unixctl_pathp)
         }
 
         switch (c) {
-        case 'h':
-            usage();
-
-        case OPT_UNIXCTL:
-            *unixctl_pathp = optarg;
-            break;
 
         VLOG_OPTION_HANDLERS
         DAEMON_OPTION_HANDLERS
 
-        case '?':
-            exit(EXIT_FAILURE);
-
         default:
-            abort();
+            end_options = 1;
+            break;
         }
+        if (end_options)
+            break;
     }
     free(short_options);
 
     argc -= optind;
     argv += optind;
 
-    switch (argc) {
-    case 0:
-        return xasprintf("unix:%s/db.sock", ovs_rundir());
+    return NULL;
+} /* passwd_srv_parse_options */
 
-    case 1:
-        return xstrdup(argv[0]);
+/**
+ * Setup directory in /var/run to store password server related files
+ */
+static void
+create_directory()
+{
+    char *dir_name = "/var/run/ops-passwd-srv";
+    struct stat f_stat = {0};
 
-    default:
-        VLOG_FATAL("at most one non-option argument accepted; "
-                   "use --help for usage");
+    if (0 > stat(dir_name, &f_stat))
+    {
+        /*/var/run/ops-passwd-srv doesn't exist, create one */
+        mkdir(dir_name, S_IRWXU | S_IRWXG | S_IRWXO);
     }
-} /* parse_options */
-#endif
+    else if (!S_ISDIR(f_stat.st_mode))
+    {
+        /* ops-passwd-srv exists but not directory */
+        if (0 != remove(dir_name))
+        {
+            /* cannot remove file, exit */
+            /* TODO: logging for remove file failure */
+            exit(-1);
+        }
+    }
+}
 
 /* password server main function */
-int
-main (int argc, char **argv)
-{
-    int socket_fd = 0;
+int main(int argc, char **argv) {
+    set_program_name(argv[0]);
+    proctitle_init(argc, argv);
+    fatal_ignore_sigpipe();
 
-	/* assign program name */
-	program_name = argv[0];
+    /* assign program name */
+    passwd_srv_parse_options(argc, argv, NULL);
 
-	/* TODO: initialze signal handler */
+    /* Fork and return in child process; but don't notify parent of
+     * startup completion yet. */
+    daemonize_start();
 
-	/* TODO: parse option */
+    create_directory();
 
-	/* initialize socket connection */
-	//socket_fd = create_socket(&sockaddr);
-	listen_socket(socket_fd);
+    /* Notify parent of startup completion. */
+    daemonize_complete();
 
-	return 0;
+    /* TODO: initialize event log */
+    // event_log_init("PASSWD");
+    /* TODO: initialize vlog */
+
+    /* initialize socket connection */
+    listen_socket();
+
+    return 0;
 }
