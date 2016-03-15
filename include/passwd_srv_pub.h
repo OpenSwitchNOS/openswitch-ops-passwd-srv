@@ -26,7 +26,8 @@
 #define PASSWD_PASSWORD_SIZE 50                         /* size of password */
 #define PASSWD_SRV_FP_SIZE   255
 #define PASSWD_SRV_PUB_KEY_LOC \
-    "/var/run/ops-passwd-srv/ops-passwd-srv-pub.pem" /* public key loc*/
+    "/var/run/ops-passwd-srv/ops-passwd-srv-pub.pem"    /* public key loc*/
+#define PASSWD_SRV_PUB_KEY_LEN 2048                     /* key length in bits */
 
 /*
  * Message type definition
@@ -63,6 +64,7 @@
 #define PASSWD_ERR_USERADD_FAILED     12 /* Failed to add user */
 #define PASSWD_ERR_USER_EXIST         13 /* Failed to add user */
 #define PASSWD_ERR_USERDEL_FAILED     14 /* Failed to del user */
+#define PASSWD_ERR_DECRYPT_FAILED     15 /* Failed to decrypt client message */
 
 
 /*
@@ -70,10 +72,10 @@
  */
 typedef struct passwd_srv_msg {
     int  op_code;
-	char username[PASSWD_USERNAME_SIZE];
-	char oldpasswd[PASSWD_PASSWORD_SIZE];
-	char newpasswd[PASSWD_PASSWORD_SIZE];
-	char file_path[PASSWD_SRV_FP_SIZE];
+    char username[PASSWD_USERNAME_SIZE];
+    char oldpasswd[PASSWD_PASSWORD_SIZE];
+    char newpasswd[PASSWD_PASSWORD_SIZE];
+    char file_path[PASSWD_SRV_FP_SIZE];
 } passwd_srv_msg_t;
 
 

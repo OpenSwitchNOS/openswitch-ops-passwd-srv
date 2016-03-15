@@ -25,8 +25,12 @@
 #include <sys/un.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <grp.h>
 
 #include "passwd_srv_pri.h"
+#include <openssl/rand.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
 
 /*
  *  Generate salt of size salt_size.
@@ -86,6 +90,79 @@ const char *generate_salt (size_t salt_size)
     salt[salt_size] = '\0';
 
     return salt;
+}
+
+/*
+ * Generate RSA public / private key pair
+ * @return RSA * object containing RSA key pair. Must be deallocated using
+ * RSA_free() when you are done with it.
+*/
+RSA *generate_RSA_keypair() {
+    RSA *rsa;
+    /* to hold the keypair to be generated */
+    BIGNUM *bne;
+    /* public exponent for RSA key generation */
+    int ret, key_generate_failed=0;
+    unsigned long e = RSA_F4;
+    BIO *bp_public = NULL;
+    /* BIO - openssl type, stands for Basic Input Output, serves as a wrapper
+     * for a file pointer in many openssl functions */
+    struct group *ovsdb_client_grp;
+
+    /* seed random number generator */
+    RAND_poll();
+
+    rsa = RSA_new();
+    bne = BN_new();
+    ret = BN_set_word(bne, e);
+    if (ret == 0) {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    /* generate a key of key_len length, after generation this will be equal to
+     * RSA_size(rsa), this is the maximum length that an encrypted message can
+     * be including padding. This is also the size that the decrypted message
+     * will be after decryption */
+    RSA_generate_key_ex(rsa, PASSWD_SRV_PUB_KEY_LEN, bne, NULL);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    /* save public key to a file in PEM format */
+    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "wx");
+    ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+
+    }
+
+cleanup:
+    BIO_free_all(bp_public);
+    BN_clear_free(bne);
+
+    if (key_generate_failed)
+    {
+        /* it seems that the desirable behaviour if this happens is to exit, but
+         * if the --monitor argument is used the process may continually
+         * respawn */
+        exit(1);
+    }
+
+    /* make the file readable by owner and group */
+    umask(S_IRUSR | S_IWUSR | S_IRGRP);
+    ovsdb_client_grp = getgrnam("ovsdb-client");
+    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+
+    /* Calling function must do RSA_free(rsa) when it is done with resource */
+    return rsa;
 }
 
 /*
@@ -390,14 +467,6 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
 
     memset(&c_stat, 0, sizeof(c_stat));
 
-    /* call stat() to get user information */
-    stat((const char*)client->msg.file_path, &c_stat);
-
-    if (NULL == (user = getpwuid(c_stat.st_uid)))
-    {
-        return PASSWD_ERR_INVALID_USER;
-    }
-
     /* user is found, compare with client info */
     if (0 == strncmp(user->pw_name, client->msg.username,
             strlen(client->msg.username)))
@@ -494,7 +563,7 @@ struct spwd *find_password_info(const char *username)
     /* unlock shadow file */
     if (0 != ulckpwdf())
     {
-        /* TODO: logging for failure */
+       /* TODO: logging for failure */
     }
 
     fclose(fpShadow);

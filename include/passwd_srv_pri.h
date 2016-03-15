@@ -18,6 +18,9 @@
 #define PASSWD_SRV_PRI_H_
 
 #include "passwd_srv_pub.h"
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
 
 #define TRUE  1
 #define FALSE 0
@@ -26,7 +29,9 @@
 #define PASSWD_SHADOW_FILE   "/etc/shadow"      /* file with password info */
 #define PASSWD_GROUP_FILE    "/etc/group"       /* file with group info */
 #define PASSWD_LOGIN_FILE    "/etc/login.defs"  /* encryption method stored */
+#define PASSWD_GROUP         "ovsdb-client"
 
+#define PASSWD_RUN_DIR       "/var/run/ops-passwd-srv"
 #define PASSWD_SRV_PRI_KEY_LOC \
     "/var/run/ops-passwd-srv/ops-passwd-srv-pri.pem" /*private key loc*/
 
@@ -75,6 +80,10 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);
 int create_and_store_password(passwd_client_t *client);
 struct spwd *find_password_info(const char *username);
 int create_ini_file();
+
+RSA *generate_RSA_keypair();
+
+void create_pubkey_file(RSA *rsa);
 
 /*
  * forward declaration
