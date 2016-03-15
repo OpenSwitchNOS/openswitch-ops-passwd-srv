@@ -46,7 +46,7 @@ add_executable ( ${PASSWDSRV}
 
 target_link_libraries (${PASSWDSRV}
                        ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
-                       -lpthread -lrt -lcrypt)
+                       -lpthread -lrt -lcrypt -lcrypto)
 
 # Rules to install ops-passwd-srv binary in rootfs
 install(TARGETS ${PASSWDSRV}
