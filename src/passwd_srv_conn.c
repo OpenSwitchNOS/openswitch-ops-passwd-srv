@@ -31,6 +31,8 @@
 
 #include "passwd_srv_pri.h"
 
+#include <pwd.h>
+
 
 /*
  * Using socket provided, send MSG back to client. MSG going back is the status
@@ -55,7 +57,6 @@ send_msg_to_client(int client_socket, int msg)
     {
         *msgBuf = msg;
 
-        /* TODO: logging for failure */
         if (0 > (err =
                 send(client_socket, msgBuf, sizeof(int), MSG_DONTROUTE)))
         {
@@ -76,17 +77,21 @@ send_msg_to_client(int client_socket, int msg)
  *
  *  @param socket_server socket descriptor created to listen
  */
-void listen_socket()
+void listen_socket(RSA *keypair)
 {
     struct sockaddr_un unix_sockaddr;
     struct sockaddr_un client_sockaddr;
     int                err = -1;
     int                socket_client, fmode;
+    int                ret;
     int fdSocket = 0, size = 0, storage_size = 0;
     struct sockaddr_storage sock_storage;
     char   filemode[] = "0777";
+    unsigned char *enc_msg;
+    unsigned char *dec_msg;
+    passwd_client_t client;
 
-    passwd_client_t    client;
+    enc_msg = (unsigned char *)malloc(RSA_size(keypair));
 
     memset(&unix_sockaddr, 0, sizeof(unix_sockaddr));
     memset(&client, 0, sizeof(client));
@@ -149,12 +154,23 @@ void listen_socket()
          * - get MSG from connected client
          **/
 
-        if (-1 == recv(socket_client, &client.msg, sizeof(passwd_srv_msg_t), MSG_PEEK))
+        if (-1 == recv(socket_client, enc_msg, RSA_size(keypair), MSG_PEEK))
         {
             /* TODO: logging for failure */
             send_msg_to_client(socket_client, PASSWD_ERR_RECV_FAILED);
             shutdown(socket_client, SHUT_WR);
             continue;
+        }
+
+        dec_msg = (unsigned char *)malloc(RSA_size(keypair));
+        if (dec_msg == NULL)
+        {
+            // something here
+        }
+
+        ret = RSA_private_decrypt(RSA_size(keypair), enc_msg, dec_msg, keypair, RSA_PKCS1_PADDING);
+        if (ret == -1) {
+            ERR_print_errors_fp(stderr);
         }
 
         if (0)//(0 != validate_user(&client_sockaddr, client))
@@ -166,6 +182,7 @@ void listen_socket()
             continue;
         }
 
+        memcpy(&client.msg, dec_msg, sizeof(passwd_srv_msg_t));
         client.socket = socket_client;
         err = process_client_request(&client);
 

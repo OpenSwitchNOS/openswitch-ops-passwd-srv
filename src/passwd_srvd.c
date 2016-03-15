@@ -63,6 +63,7 @@
 //#include "eventlog.h"
 #include "passwd_srv_pri.h"
 
+#include <openssl/rsa.h>
 //VLOG_DEFINE_THIS_MODULE(passwd-srv);
 
 static char *
@@ -142,6 +143,7 @@ create_directory()
 
 /* password server main function */
 int main(int argc, char **argv) {
+    RSA *rsa;
     set_program_name(argv[0]);
     proctitle_init(argc, argv);
     fatal_ignore_sigpipe();
@@ -162,8 +164,15 @@ int main(int argc, char **argv) {
     // event_log_init("PASSWD");
     /* TODO: initialize vlog */
 
+
+    /* generate RSA keypair and create pubkey file */
+    rsa = generate_RSA_keypair();
+
     /* initialize socket connection */
-    listen_socket();
+    listen_socket(rsa);
+
+    // do we need signal handling?
+    RSA_free(rsa);
 
     return 0;
 }
