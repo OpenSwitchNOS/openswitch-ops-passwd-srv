@@ -18,6 +18,9 @@
 #define PASSWD_SRV_PRI_H_
 
 #include "passwd_srv_pub.h"
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
 
 #define PASSWD_PASSWORD_FILE "/etc/passwd"      /* file with user info */
 #define PASSWD_SHADOW_FILE   "/etc/shadow"      /* file with password info */
@@ -57,6 +60,10 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);
 
 int create_and_store_password(passwd_client_t *client);
 struct spwd *find_password_info(const char *username);
+
+RSA *generate_RSA_keypair();
+
+void create_pubkey_file(RSA *rsa);
 
 /*
  * forward declaration

@@ -25,8 +25,12 @@
 #include <sys/un.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <grp.h>
 
 #include "passwd_srv_pri.h"
+#include <openssl/rand.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
 
 /*
  *  Generate salt of size salt_size.
@@ -86,6 +90,64 @@ const char *generate_salt (size_t salt_size)
     salt[salt_size] = '\0';
 
     return salt;
+}
+
+RSA *generate_RSA_keypair() {
+    RSA *rsa;
+    BIGNUM *bne;
+    int ret, key_len=2048, key_generate_failed=0;
+    unsigned long e = RSA_F4;
+    BIO *bp_public = NULL;
+    struct group *ovsdb_client_grp;
+
+    RAND_poll();
+
+    rsa = RSA_new();
+    bne = BN_new();
+    ret = BN_set_word(bne, e);
+    if (ret == 0) {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    RSA_generate_key_ex(rsa, key_len, bne, NULL);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    /* save public key to a file in PEM format */
+    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "w+");
+    ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+
+    }
+
+    cleanup:
+    BIO_free_all(bp_public);
+    BN_clear_free(bne);
+
+    if (key_generate_failed)
+    {
+        /* it seems that the desirable behaviour if this happens is to exit, but
+         * if the --monitor argument is used the process may continually
+         * respawn */
+        exit(1);
+    }
+
+    /* make the file readable by owner and group */
+    ovsdb_client_grp = getgrnam("ovsdb-client");
+    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+    chmod(PASSWD_SRV_PUB_KEY_LOC, S_IRUSR | S_IRGRP);
+    /* Calling function must do RSA_free(rsa) when it is done with resource */
+    return rsa;
 }
 
 /*
@@ -350,14 +412,6 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
 
     memset(&c_stat, 0, sizeof(c_stat));
 
-    /* call stat() to get user information */
-    stat((const char*)client->msg.file_path, &c_stat);
-
-    if (NULL == (user = getpwuid(c_stat.st_uid)))
-    {
-        return PASSWD_ERR_INVALID_USER;
-    }
-
     /* user is found, compare with client info */
     if (0 == strncmp(user->pw_name, client->msg.username,
             strlen(client->msg.username)))
@@ -454,7 +508,7 @@ struct spwd *find_password_info(const char *username)
     /* unlock shadow file */
     if (0 != ulckpwdf())
     {
-        /* TODO: logging for failure */
+       /* TODO: logging for failure */
     }
 
     fclose(fpShadow);
