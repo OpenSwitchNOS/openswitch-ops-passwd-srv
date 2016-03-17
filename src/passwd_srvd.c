@@ -60,7 +60,7 @@
 #include <vswitch-idl.h>
 #include <openvswitch/vlog.h>
 
-#include "eventlog.h"
+//#include "eventlog.h"
 #include "passwd_srv_pri.h"
 
 //VLOG_DEFINE_THIS_MODULE(passwd-srv);

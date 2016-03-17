@@ -23,7 +23,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Werror")
 
 # Rules to locate needed libraries
 include(FindPkgConfig)
-pkg_check_modules(CONFIG_YAML REQUIRED ops-config-yaml)
 pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
 pkg_check_modules(OVSDB REQUIRED libovsdb)
 
@@ -45,7 +44,7 @@ add_executable ( ${PASSWDSRV}
     ${SOURCES}
 )
 
-target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
+target_link_libraries (${PASSWDSRV}
                        ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
                        -lpthread -lrt -lcrypt)
 
