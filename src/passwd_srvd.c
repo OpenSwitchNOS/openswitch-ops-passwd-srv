@@ -154,6 +154,7 @@ int main(int argc, char **argv) {
     daemonize_start();
 
     create_directory();
+    create_ini_file();
 
     /* Notify parent of startup completion. */
     daemonize_complete();

@@ -27,6 +27,8 @@
 #define PASSWD_SRV_PRI_KEY_LOC \
     "/var/run/ops-passwd-srv/ops-passwd-srv-pri.pem" /*private key loc*/
 
+#define PASSWD_SRV_INI_FILE "/etc/ops-passwd-srv.ini"
+
 /*
  * password server user-object datat structure
  */
@@ -57,6 +59,7 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);
 
 int create_and_store_password(passwd_client_t *client);
 struct spwd *find_password_info(const char *username);
+int create_ini_file();
 
 /*
  * forward declaration
