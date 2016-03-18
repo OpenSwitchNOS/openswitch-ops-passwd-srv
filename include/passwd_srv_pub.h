@@ -37,6 +37,8 @@
  * 		  in the future
  */
 #define PASSWD_MSG_CHG_PASSWORD 1 /* request to change password */
+#define PASSWD_MSG_ADD_USER     2 /* request to add user */
+#define PASSWD_MSG_DEL_USER     3 /* request to del user */
 
 
 /*
@@ -56,8 +58,11 @@
 #define PASSWD_ERR_INVALID_OPCODE     7  /* invalid op-code from client */
 #define PASSWD_ERR_INVALID_USER       8  /* user does not have privilege */
 #define PASSWD_ERR_INVALID_PARAM      9  /* invalid parameter */
-#define PASSWD_ERR_PASSWD_UPD_FAIL   10  /* password update failed */
-#define PASSWD_ERR_SEND_FAILED       11  /* Failed to send MSG */
+#define PASSWD_ERR_PASSWD_UPD_FAIL    10 /* password update failed */
+#define PASSWD_ERR_SEND_FAILED        11 /* Failed to send MSG */
+#define PASSWD_ERR_USERADD_FAILED     12 /* Failed to add user */
+#define PASSWD_ERR_USER_EXIST         13 /* Failed to add user */
+#define PASSWD_ERR_USERDEL_FAILED     14 /* Failed to del user */
 
 
 /*

@@ -19,6 +19,9 @@
 
 #include "passwd_srv_pub.h"
 
+#define TRUE  1
+#define FALSE 0
+
 #define PASSWD_PASSWORD_FILE "/etc/passwd"      /* file with user info */
 #define PASSWD_SHADOW_FILE   "/etc/shadow"      /* file with password info */
 #define PASSWD_GROUP_FILE    "/etc/group"       /* file with group info */
@@ -28,6 +31,18 @@
     "/var/run/ops-passwd-srv/ops-passwd-srv-pri.pem" /*private key loc*/
 
 #define PASSWD_SRV_INI_FILE "/etc/ops-passwd-srv.ini"
+
+/**
+ * defines for adding user
+ * defect #151
+ */
+#define USERADD "/usr/sbin/useradd"
+#define USERMOD "/usr/sbin/usermod"
+#define OVSDB_GROUP "ovsdb-client"
+#define NETOP_GROUP "ops_netop"
+#define VTYSH_PROMPT "/usr/bin/vtysh"
+#define USERDEL "/usr/sbin/userdel"
+#define USER_NAME_MAX_LENGTH 32
 
 /*
  * password server user-object datat structure

@@ -140,6 +140,46 @@ char *search_login_defs(const char *target)
 }
 
 /**
+ * Create a user using useradd program
+ *
+ * @param username username to add
+ * @param useradd  add if true, deleate otherwise
+ */
+static
+struct spwd *create_user(const char *username, int useradd)
+{
+    char useradd_comm[512];
+    struct spwd *passwd_entry = NULL;
+
+    memset(useradd_comm, 0, sizeof(useradd_comm));
+
+    if (useradd)
+    {
+        snprintf(useradd_comm, sizeof(useradd_comm),
+            "%s -g %s -G %s -s %s %s", USERADD, NETOP_GROUP, OVSDB_GROUP,
+            VTYSH_PROMPT, username);
+    }
+    else
+    {
+        snprintf(useradd_comm, sizeof(useradd_comm),
+                    "%s %s", USERDEL, username);
+    }
+
+    if (0 > system(useradd_comm))
+    {
+        return NULL;
+    }
+
+    /* make sure that user has been created */
+    if (useradd && NULL == (passwd_entry = find_password_info(username)))
+    {
+        return NULL;
+    }
+
+    return passwd_entry;
+}
+
+/**
  * Look into login.defs file to find encryption method
  *  If encrypt_method is not found, hashing algorighm
  *  falls back to MD5 or DES.
@@ -469,6 +509,8 @@ struct spwd *find_password_info(const char *username)
  */
 int process_client_request(passwd_client_t *client)
 {
+    int error = PASSWD_ERR_FATAL;
+
     if (NULL == client)
     {
         return -1;
@@ -491,8 +533,63 @@ int process_client_request(passwd_client_t *client)
             return PASSWD_ERR_PASSWORD_NOT_MATCH;
         }
 
-        /* write new password to shadow file */
-        return create_and_store_password(client);
+        if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
+        {
+            printf("Password updated successfully for user\n");
+        }
+        else
+        {
+            printf("Password was not updated successfully [error=%d]\n", error);
+        }
+        break;
+    }
+    case PASSWD_MSG_ADD_USER:
+    {
+        /* make sure username does not exist */
+        if (NULL != (client->passwd = find_password_info(client->msg.username)))
+        {
+            /* TODO: logging error */
+            return PASSWD_ERR_USER_EXIST;
+        }
+
+        /* add user to /etc/passwd file */
+        if (NULL == (client->passwd = create_user(client->msg.username, TRUE)))
+        {
+            /* failed to create user or getting information from /etc/passwd */
+            return PASSWD_ERR_USERADD_FAILED;
+        }
+
+        /* now add password for the user */
+        if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
+        {
+            printf("User was added successfully\n");
+        }
+        else
+        {
+            printf("User was not added successfully [error=%d]\n", error);
+            /* delete user since it failed to add password */
+            create_user(client->msg.username, FALSE);
+        }
+        break;
+    }
+    case PASSWD_MSG_DEL_USER:
+    {
+        /* make sure username does not exist */
+        if (NULL == (client->passwd = find_password_info(client->msg.username)))
+        {
+            /* TODO: logging error */
+            return PASSWD_ERR_USER_NOT_FOUND;
+        }
+
+        /* delete user from /etc/passwd file */
+        if (NULL != (client->passwd = create_user(client->msg.username, FALSE)))
+        {
+            /* failed to create user or getting information from /etc/passwd */
+            return PASSWD_ERR_USERDEL_FAILED;
+        }
+
+        error = PASSWD_ERR_SUCCESS;
+        break;
     }
     default:
     {
@@ -500,7 +597,7 @@ int process_client_request(passwd_client_t *client)
         return PASSWD_ERR_INVALID_OPCODE;
     }
     }
-    return PASSWD_ERR_SUCCESS;
+    return error;
 }
 
 /**
@@ -541,6 +638,7 @@ int create_ini_file()
     fputs("\n", fp);
     fputs("[op_code]\n", fp);
     fprintf(fp, "PASSWD_MSG_CHG_PASSWORD=%d\n", PASSWD_MSG_CHG_PASSWORD);
+    fprintf(fp, "PASSWD_MSG_ADD_USER=%d\n", PASSWD_MSG_ADD_USER);
     fputs("\n", fp);
 
     /* write error codes */

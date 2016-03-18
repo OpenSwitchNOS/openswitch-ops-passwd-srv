@@ -169,15 +169,6 @@ void listen_socket()
         client.socket = socket_client;
         err = process_client_request(&client);
 
-        if (PASSWD_ERR_SUCCESS == err)
-        {
-            printf("Password updated successfully for user\n");
-        }
-        else
-        {
-            printf("Password was not updated successfully [error=%d]\n", err);
-        }
-
         send_msg_to_client(socket_client, err);
         shutdown(socket_client, SHUT_WR);
         close(socket_client);
