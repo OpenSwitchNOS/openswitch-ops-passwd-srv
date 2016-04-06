@@ -47,6 +47,9 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <limits.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <grp.h>
 
 //#include "openvswitch/vlog.h"
 
@@ -63,7 +66,10 @@
 //#include "eventlog.h"
 #include "passwd_srv_pri.h"
 
+#include <openssl/rsa.h>
 //VLOG_DEFINE_THIS_MODULE(passwd-srv);
+#define __USE_XOPEN_EXTENDED
+#include "/usr/include/ftw.h"
 
 static char *
 passwd_srv_parse_options(int argc, char *argv[], char **unixctl_pathp)
@@ -114,34 +120,59 @@ passwd_srv_parse_options(int argc, char *argv[], char **unixctl_pathp)
     return NULL;
 } /* passwd_srv_parse_options */
 
+
+/**
+ * delete directory helper function
+ */
+static int
+_delete_helper(const char *fpath, const struct stat *sb, int typeflag,
+               struct FTW *ftwbuf)
+{
+    int ret;
+    ret = remove(fpath);
+    if (0 > ret) {
+        return(-1);
+    }
+    return(0);
+}
+
 /**
  * Setup directory in /var/run to store password server related files
  */
 static void
 create_directory()
 {
-    char *dir_name = "/var/run/ops-passwd-srv";
     struct stat f_stat = {0};
+    struct group *passwd_grp;
 
-    if (0 > stat(dir_name, &f_stat))
+    passwd_grp = getgrnam(PASSWD_GROUP);
+    setgid(passwd_grp->gr_gid);
+
+    if (0 == stat(PASSWD_RUN_DIR, &f_stat))
     {
-        /*/var/run/ops-passwd-srv doesn't exist, create one */
-        mkdir(dir_name, S_IRWXU | S_IRWXG | S_IRWXO);
-    }
-    else if (!S_ISDIR(f_stat.st_mode))
-    {
-        /* ops-passwd-srv exists but not directory */
-        if (0 != remove(dir_name))
+        if (0 == remove(PASSWD_RUN_DIR))
         {
-            /* cannot remove file, exit */
-            /* TODO: logging for remove file failure */
+            ;
+        }
+        else if (0 == nftw(PASSWD_RUN_DIR, _delete_helper, 5, FTW_DEPTH | FTW_PHYS))
+        {
+            ;
+        }
+        else
+        {
+            /* unable to delete directory or file */
+            /* TODO: logging */
             exit(-1);
         }
     }
+
+    /* deletion was succesful, create directory */
+    mkdir(PASSWD_RUN_DIR, S_IRUSR | S_IWUSR | S_IRGRP | S_IXGRP);
 }
 
 /* password server main function */
 int main(int argc, char **argv) {
+    RSA *rsa;
     set_program_name(argv[0]);
     proctitle_init(argc, argv);
     fatal_ignore_sigpipe();
@@ -154,6 +185,7 @@ int main(int argc, char **argv) {
     daemonize_start();
 
     create_directory();
+    create_ini_file();
 
     /* Notify parent of startup completion. */
     daemonize_complete();
@@ -162,8 +194,15 @@ int main(int argc, char **argv) {
     // event_log_init("PASSWD");
     /* TODO: initialize vlog */
 
+
+    /* generate RSA keypair and create pubkey file */
+    rsa = generate_RSA_keypair();
+
     /* initialize socket connection */
-    listen_socket();
+    listen_socket(rsa);
+
+    // do we need signal handling?
+    RSA_free(rsa);
 
     return 0;
 }

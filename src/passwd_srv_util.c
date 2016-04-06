@@ -25,8 +25,12 @@
 #include <sys/un.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <grp.h>
 
 #include "passwd_srv_pri.h"
+#include <openssl/rand.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
 
 /*
  *  Generate salt of size salt_size.
@@ -89,6 +93,79 @@ const char *generate_salt (size_t salt_size)
 }
 
 /*
+ * Generate RSA public / private key pair
+ * @return RSA * object containing RSA key pair. Must be deallocated using
+ * RSA_free() when you are done with it.
+*/
+RSA *generate_RSA_keypair() {
+    RSA *rsa;
+    /* to hold the keypair to be generated */
+    BIGNUM *bne;
+    /* public exponent for RSA key generation */
+    int ret, key_generate_failed=0;
+    unsigned long e = RSA_F4;
+    BIO *bp_public = NULL;
+    /* BIO - openssl type, stands for Basic Input Output, serves as a wrapper
+     * for a file pointer in many openssl functions */
+    struct group *ovsdb_client_grp;
+
+    /* seed random number generator */
+    RAND_poll();
+
+    rsa = RSA_new();
+    bne = BN_new();
+    ret = BN_set_word(bne, e);
+    if (ret == 0) {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    /* generate a key of key_len length, after generation this will be equal to
+     * RSA_size(rsa), this is the maximum length that an encrypted message can
+     * be including padding. This is also the size that the decrypted message
+     * will be after decryption */
+    RSA_generate_key_ex(rsa, PASSWD_SRV_PUB_KEY_LEN, bne, NULL);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+    }
+
+    /* save public key to a file in PEM format */
+    bp_public = BIO_new_file(PASSWD_SRV_PUB_KEY_LOC, "wx");
+    ret = PEM_write_bio_RSAPublicKey(bp_public, rsa);
+    if (ret != 1)
+    {
+        /* TODO: logging */
+        key_generate_failed = 1;
+        goto cleanup;
+
+    }
+
+cleanup:
+    BIO_free_all(bp_public);
+    BN_clear_free(bne);
+
+    if (key_generate_failed)
+    {
+        /* it seems that the desirable behaviour if this happens is to exit, but
+         * if the --monitor argument is used the process may continually
+         * respawn */
+        exit(1);
+    }
+
+    /* make the file readable by owner and group */
+    umask(S_IRUSR | S_IWUSR | S_IRGRP);
+    ovsdb_client_grp = getgrnam("ovsdb-client");
+    chown(PASSWD_SRV_PUB_KEY_LOC, getuid(), ovsdb_client_grp->gr_gid);
+
+    /* Calling function must do RSA_free(rsa) when it is done with resource */
+    return rsa;
+}
+
+/*
  * Return the salt size.
  * The size of the salt string is between 8 and 16 bytes for the SHA crypt
  * methods.
@@ -137,6 +214,46 @@ char *search_login_defs(const char *target)
 
     fclose(fpLogin);
     return NULL;
+}
+
+/**
+ * Create a user using useradd program
+ *
+ * @param username username to add
+ * @param useradd  add if true, deleate otherwise
+ */
+static
+struct spwd *create_user(const char *username, int useradd)
+{
+    char useradd_comm[512];
+    struct spwd *passwd_entry = NULL;
+
+    memset(useradd_comm, 0, sizeof(useradd_comm));
+
+    if (useradd)
+    {
+        snprintf(useradd_comm, sizeof(useradd_comm),
+            "%s -g %s -G %s -s %s %s", USERADD, NETOP_GROUP, OVSDB_GROUP,
+            VTYSH_PROMPT, username);
+    }
+    else
+    {
+        snprintf(useradd_comm, sizeof(useradd_comm),
+                    "%s %s", USERDEL, username);
+    }
+
+    if (0 > system(useradd_comm))
+    {
+        return NULL;
+    }
+
+    /* make sure that user has been created */
+    if (useradd && NULL == (passwd_entry = find_password_info(username)))
+    {
+        return NULL;
+    }
+
+    return passwd_entry;
 }
 
 /**
@@ -350,14 +467,6 @@ int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
 
     memset(&c_stat, 0, sizeof(c_stat));
 
-    /* call stat() to get user information */
-    stat((const char*)client->msg.file_path, &c_stat);
-
-    if (NULL == (user = getpwuid(c_stat.st_uid)))
-    {
-        return PASSWD_ERR_INVALID_USER;
-    }
-
     /* user is found, compare with client info */
     if (0 == strncmp(user->pw_name, client->msg.username,
             strlen(client->msg.username)))
@@ -454,7 +563,7 @@ struct spwd *find_password_info(const char *username)
     /* unlock shadow file */
     if (0 != ulckpwdf())
     {
-        /* TODO: logging for failure */
+       /* TODO: logging for failure */
     }
 
     fclose(fpShadow);
@@ -469,6 +578,8 @@ struct spwd *find_password_info(const char *username)
  */
 int process_client_request(passwd_client_t *client)
 {
+    int error = PASSWD_ERR_FATAL;
+
     if (NULL == client)
     {
         return -1;
@@ -491,8 +602,63 @@ int process_client_request(passwd_client_t *client)
             return PASSWD_ERR_PASSWORD_NOT_MATCH;
         }
 
-        /* write new password to shadow file */
-        return create_and_store_password(client);
+        if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
+        {
+            printf("Password updated successfully for user\n");
+        }
+        else
+        {
+            printf("Password was not updated successfully [error=%d]\n", error);
+        }
+        break;
+    }
+    case PASSWD_MSG_ADD_USER:
+    {
+        /* make sure username does not exist */
+        if (NULL != (client->passwd = find_password_info(client->msg.username)))
+        {
+            /* TODO: logging error */
+            return PASSWD_ERR_USER_EXIST;
+        }
+
+        /* add user to /etc/passwd file */
+        if (NULL == (client->passwd = create_user(client->msg.username, TRUE)))
+        {
+            /* failed to create user or getting information from /etc/passwd */
+            return PASSWD_ERR_USERADD_FAILED;
+        }
+
+        /* now add password for the user */
+        if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
+        {
+            printf("User was added successfully\n");
+        }
+        else
+        {
+            printf("User was not added successfully [error=%d]\n", error);
+            /* delete user since it failed to add password */
+            create_user(client->msg.username, FALSE);
+        }
+        break;
+    }
+    case PASSWD_MSG_DEL_USER:
+    {
+        /* make sure username does not exist */
+        if (NULL == (client->passwd = find_password_info(client->msg.username)))
+        {
+            /* TODO: logging error */
+            return PASSWD_ERR_USER_NOT_FOUND;
+        }
+
+        /* delete user from /etc/passwd file */
+        if (NULL != (client->passwd = create_user(client->msg.username, FALSE)))
+        {
+            /* failed to create user or getting information from /etc/passwd */
+            return PASSWD_ERR_USERDEL_FAILED;
+        }
+
+        error = PASSWD_ERR_SUCCESS;
+        break;
     }
     default:
     {
@@ -500,5 +666,101 @@ int process_client_request(passwd_client_t *client)
         return PASSWD_ERR_INVALID_OPCODE;
     }
     }
-    return PASSWD_ERR_SUCCESS;
+    return error;
+}
+
+/**
+ * Create ini file to expose variables defined in public header
+ */
+int create_ini_file()
+{
+    FILE *fp = NULL;
+
+    if (NULL == (fp = fopen(PASSWD_SRV_INI_FILE, "w")))
+    {
+        /* TODO: logging */
+        return PASSWD_ERR_FATAL;
+    }
+
+    /* write public key file location */
+    fputs("# public key location\n", fp);
+    fputs("[pub_key_loc_type]\n", fp);
+    fputs("PASSWD_SRV_PUB_KEY_LOC_TYPE=string\n", fp);
+    fputs("\n", fp);
+    fputs("[pub_key_loc]\n", fp);
+    fprintf(fp, "PASSWD_SRV_PUB_KEY_LOC=%s\n", PASSWD_SRV_PUB_KEY_LOC);
+    fputs("\n", fp);
+
+    /* write socket descriptor location */
+    fputs("# server socket descriptor\n", fp);
+    fputs("[socket_fd_type]\n", fp);
+    fputs("PASSWD_SRV_SOCK_FD_TYPE=string\n", fp);
+    fputs("\n", fp);
+    fputs("[socket_fd_loc]\n", fp);
+    fprintf(fp, "PASSWD_SRV_SOCK_FD=%s\n", PASSWD_SRV_SOCK_FD);
+    fputs("\n", fp);
+
+    /* write opcode */
+    fputs("# message op code\n", fp);
+    fputs("[op_code_size]\n", fp);
+    fprintf(fp, "PASSWD_MSG_SIZE=%d\n", (int)sizeof(int));
+    fputs("\n", fp);
+    fputs("[op_code]\n", fp);
+    fprintf(fp, "PASSWD_MSG_CHG_PASSWORD=%d\n", PASSWD_MSG_CHG_PASSWORD);
+    fprintf(fp, "PASSWD_MSG_ADD_USER=%d\n", PASSWD_MSG_ADD_USER);
+    fputs("\n", fp);
+
+    /* write error codes */
+    fputs("# error code used by password server\n", fp);
+    fputs("[error_code_size]\n", fp);
+    fprintf(fp, "PASSWD_ERR_CODE_SIZE=%d\n", (int)sizeof(int));
+    fputs("[error_code]\n", fp);
+    fprintf(fp, "PASSWD_ERR_FATAL=%d\n", PASSWD_ERR_FATAL);
+    fprintf(fp, "PASSWD_ERR_SUCCESS=%d\n", PASSWD_ERR_SUCCESS);
+    fprintf(fp, "PASSWD_ERR_USER_NOT_FOUND=%d\n", PASSWD_ERR_USER_NOT_FOUND);
+    fprintf(fp, "PASSWD_ERR_PASSWORD_NOT_MATCH=%d\n", PASSWD_ERR_PASSWORD_NOT_MATCH);
+    fprintf(fp, "PASSWD_ERR_SHADOW_FILE=%d\n", PASSWD_ERR_SHADOW_FILE);
+    fprintf(fp, "PASSWD_ERR_INVALID_MSG=%d\n", PASSWD_ERR_INVALID_MSG);
+    fprintf(fp, "PASSWD_ERR_INSUFFICIENT_MEM=%d\n", PASSWD_ERR_INSUFFICIENT_MEM);
+    fprintf(fp, "PASSWD_ERR_INVALID_OPCODE=%d\n", PASSWD_ERR_INVALID_OPCODE);
+    fprintf(fp, "PASSWD_ERR_INVALID_USER=%d\n", PASSWD_ERR_INVALID_USER);
+    fprintf(fp, "PASSWD_ERR_INVALID_PARAM=%d\n", PASSWD_ERR_INVALID_PARAM);
+    fprintf(fp, "PASSWD_ERR_PASSWD_UPD_FAIL=%d\n", PASSWD_ERR_PASSWD_UPD_FAIL);
+    fprintf(fp, "PASSWD_ERR_SEND_FAILED=%d\n", PASSWD_ERR_SEND_FAILED);
+    fputs("\n", fp);
+
+    /* write message structure information */
+    fputs("# message structure information\n", fp);
+    fputs("\n", fp);
+
+    /* write opcode info */
+    fputs("# opcode\n", fp);
+    fputs("[op_code_msg]\n", fp);
+    fputs("PASSWD_SOCK_MSG_OPCODE_TYPE=integer\n", fp);
+    fprintf(fp, "PASSWD_SOCK_MSG_OPCODE_SIZE=%d\n", (int)sizeof(int));
+    fputs("\n", fp);
+
+    /* write username info */
+    fputs("# username info\n", fp);
+    fputs("[msg_username]\n", fp);
+    fputs("PASSWD_SOCK_MSG_UNAME_TYPE=string\n", fp);
+    fprintf(fp, "PASSWD_SOCK_MSG_UNAME_SIZE=%d\n", PASSWD_USERNAME_SIZE);
+    fputs("\n", fp);
+
+    /* write old password info */
+    fputs("# password info\n", fp);
+    fputs("[msg_old_password]\n", fp);
+    fputs("PASSWD_SOCK_MSG_OLDPASS_TYPE=string\n", fp);
+    fprintf(fp, "PASSWD_SOCK_MSG_OLDPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
+    fputs("\n", fp);
+
+    /* write new password info */
+    fputs("# password info\n", fp);
+    fputs("[msg_new_password]\n", fp);
+    fputs("PASSWD_SOCK_MSG_NEWPASS_TYPE=string\n", fp);
+    fprintf(fp, "PASSWD_SOCK_MSG_NEWPASS_SIZE=%d\n", PASSWD_PASSWORD_SIZE);
+    fputs("\n", fp);
+
+    fclose(fp);
+    return 0;
 }
