@@ -24,6 +24,10 @@ The password is encrypted on the client-side using a public key.  The password s
 decrypts the cipher-text using a private key. Both private/public keys are
 created during the initialization of password server.
 
+When the message is being encrypted/decrypted, RSA_PKCS1_OAEP_PADDING is used to
+provide the padding while a server/client is performing the message encryption
+or decryption.
+
 ##Responsibilities
 
 The main responsibilities of the Password Server are:
