@@ -97,8 +97,8 @@ enum PASSWD_yaml_key_e {
 
 typedef struct passwd_yaml_file_path {
     enum PASSWD_yaml_path_type_e type;
-    char    path[PASSWD_SRV_MAX_STR_SIZE+1];
-    char    desc[PASSWD_SRV_MAX_STR_SIZE+1];
+    char    path[PASSWD_SRV_MAX_STR_SIZE];
+    char    desc[PASSWD_SRV_MAX_STR_SIZE];
     struct  passwd_yaml_file_path *next;
 } passwd_yaml_file_path_t;
 

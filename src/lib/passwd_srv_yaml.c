@@ -44,7 +44,7 @@ int add_yaml_path_desc(passwd_yaml_file_path_t *entry, const char *desc)
     {
         return PASSWD_ERR_FATAL;
     }
-    else if (PASSWD_SRV_MAX_STR_SIZE < strlen(desc))
+    else if (PASSWD_SRV_MAX_STR_SIZE < (strlen(desc)+1))
     {
         return PASSWD_ERR_FATAL;
     }
@@ -68,7 +68,7 @@ int add_yaml_file_path(passwd_yaml_file_path_t *entry, const char *file_path)
     {
         return PASSWD_ERR_FATAL;
     }
-    else if (PASSWD_SRV_MAX_STR_SIZE < strlen(file_path))
+    else if (PASSWD_SRV_MAX_STR_SIZE < (strlen(file_path)+1))
     {
         return PASSWD_ERR_FATAL;
     }
