@@ -87,6 +87,7 @@ void listen_socket(RSA *keypair)
     int fdSocket = 0, size = 0, storage_size = 0;
     struct sockaddr_storage sock_storage;
     char   filemode[] = "0777";
+    char   *sock_file = NULL;
     unsigned char *enc_msg;
     unsigned char *dec_msg;
     passwd_client_t client;
@@ -103,9 +104,16 @@ void listen_socket(RSA *keypair)
     memset(&unix_sockaddr, 0, sizeof(unix_sockaddr));
     memset(&client, 0, sizeof(client));
 
+    /* get the socket location from yaml */
+    if (NULL == (sock_file = get_file_path(PASSWD_SRV_YAML_PATH_SOCK)))
+    {
+        /* couldn't find socket location from yaml */
+        exit(-1);
+    }
+
     /* setup sockaddr to create socket */
     unix_sockaddr.sun_family = AF_UNIX;
-    strncpy(unix_sockaddr.sun_path, PASSWD_SRV_SOCK_FD, strlen(PASSWD_SRV_SOCK_FD));
+    strncpy(unix_sockaddr.sun_path, sock_file, strlen(sock_file));
 
     /* create a socket */
     if (0 > (fdSocket = socket(AF_UNIX, SOCK_STREAM, 0)))
@@ -125,7 +133,7 @@ void listen_socket(RSA *keypair)
     }
 
     fmode = strtol(filemode, 0, 8);
-    chmod(PASSWD_SRV_SOCK_FD, fmode);
+    chmod(sock_file, fmode);
     storage_size = sizeof(sock_storage);
 
     memset(&client_sockaddr, 0, sizeof(client_sockaddr));

@@ -23,6 +23,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Werror")
 
 # Rules to locate needed libraries
 include(FindPkgConfig)
+pkg_check_modules(CONFIG_YAML REQUIRED ops-config-yaml)
 pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
 pkg_check_modules(OVSDB REQUIRED libovsdb)
 
@@ -37,17 +38,17 @@ set (SOURCES
     ${PROJECT_SOURCE_DIR}/src/passwd_srvd.c
     ${SRC_DIR}/passwd_srv_conn.c
     ${SRC_DIR}/passwd_srv_util.c
+    ${SRC_DIR}/lib/passwd_srv_yaml.c
 )
 
 # Rules to build ops-passwd-srv
-add_executable ( ${PASSWDSRV}
-    ${SOURCES}
-)
-
-target_link_libraries (${PASSWDSRV}
+add_executable ( ${PASSWDSRV} ${SOURCES} )
+target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
                        ${OVSCOMMON_LIBRARIES} ${OVSDB_LIBRARIES}
-                       -lpthread -lrt -lcrypt -lcrypto)
+                       -lpthread -lrt -lcrypt -lcrypto -lyaml)
 
 # Rules to install ops-passwd-srv binary in rootfs
 install(TARGETS ${PASSWDSRV}
         RUNTIME DESTINATION bin)
+
+add_subdirectory(src/lib)
