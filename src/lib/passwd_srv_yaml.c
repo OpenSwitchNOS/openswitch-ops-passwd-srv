@@ -266,10 +266,12 @@ int parse_passwd_srv_yaml()
     yaml_parser_t parser;
     yaml_event_t  event;
     enum PASSWD_yaml_key_e event_value, current_state;
-    passwd_yaml_file_path_t *yaml_entry;
+    passwd_yaml_file_path_t *yaml_entry = NULL;
 
     memset(&parser, 0, sizeof(parser));
     memset(&event, 0, sizeof(event));
+
+    event_value = current_state = PASSWD_SRV_YAML_MAX;
 
     if(!yaml_parser_initialize(&parser))
     {

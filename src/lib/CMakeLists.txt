@@ -35,10 +35,14 @@ include_directories (
 
 # Source files to build ops-passwd-srv
 set (LIBSOURCES passwd_srv_yaml.c)
+set (YAMLFILE ops-passwd-srv.yaml)
+set (ETCPASSWD "/etc/ops-passwd-srv/")
 
 # Rules to build ops-passwd-srv
 add_library(${LIBPASSWDSRV} SHARED ${LIBSOURCES})
 target_link_libraries(${LIBPASSWDSRV}  -lyaml)
 
 # Rules to install ops-passwd-srv binary in rootfs
-install(TARGETS ${LIBPASSWDSRV} ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+install(DIRECTORY DESTINATION ${ETCPASSWD})
+install(FILES ${YAMLFILE} DESTINATION ${ETCPASSWD})
+install(TARGETS ${LIBPASSWDSRV} LIBRARY DESTINATION lib)

@@ -98,9 +98,9 @@ const char *generate_salt (size_t salt_size)
  * RSA_free() when you are done with it.
 */
 RSA *generate_RSA_keypair() {
-    RSA *rsa;
+    RSA *rsa = NULL;
     /* to hold the keypair to be generated */
-    BIGNUM *bne;
+    BIGNUM *bne = NULL;
     /* public exponent for RSA key generation */
     int ret, key_generate_failed=0;
     unsigned long e = RSA_F4;
