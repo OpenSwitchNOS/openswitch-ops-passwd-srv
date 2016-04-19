@@ -2,4 +2,3 @@
 host=review.openswitch.net
 port=29418
 project=openswitch/ops-passwd-srv.git
-defaultbranch=feature/ops-passwd-srv
