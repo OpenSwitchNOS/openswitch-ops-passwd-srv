@@ -294,6 +294,7 @@ int parse_passwd_srv_yaml()
         VLOG_ERR("Failed to parse yaml file");
         yaml_parser_delete(&parser);
         yaml_event_delete(&event);
+        fclose(fp);
         return PASSWD_ERR_FATAL;
     }
 
@@ -315,6 +316,7 @@ int parse_passwd_srv_yaml()
                             add_path_type((const char *)event.data.scalar.value)))
                     {
                         VLOG_ERR("Cannot add path type to the list");
+                        fclose(fp);
                         return PASSWD_ERR_FATAL;
                     }
 
@@ -326,6 +328,7 @@ int parse_passwd_srv_yaml()
                     {
                         /* yaml_entry must not be null at this point */
                         VLOG_ERR("Cannot add file path to the list");
+                        fclose(fp);
                         return PASSWD_ERR_FATAL;
                     }
                     if (PASSWD_ERR_SUCCESS !=
@@ -334,6 +337,7 @@ int parse_passwd_srv_yaml()
                     {
                         /* yaml_entry must not be null at this point */
                         VLOG_ERR("Cannot add path to the yaml entry");
+                        fclose(fp);
                         return PASSWD_ERR_FATAL;
                     }
                     break;
@@ -344,6 +348,7 @@ int parse_passwd_srv_yaml()
                     {
                         /* yaml_entry must not be null at this point */
                         VLOG_ERR("Cannot add file path to the list");
+                        fclose(fp);
                         return PASSWD_ERR_FATAL;
                     }
                     if (PASSWD_ERR_SUCCESS !=
@@ -352,6 +357,7 @@ int parse_passwd_srv_yaml()
                     {
                         /* yaml_entry must not be null at this point */
                         VLOG_ERR("Cannot add desc to the yaml entry");
+                        fclose(fp);
                         return PASSWD_ERR_FATAL;
                     }
                     break;

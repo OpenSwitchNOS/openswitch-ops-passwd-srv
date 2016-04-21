@@ -64,6 +64,7 @@ send_msg_to_client(int client_socket, int msg)
                 send(client_socket, msgBuf, sizeof(int), MSG_DONTROUTE)))
         {
             VLOG_ERR("Failed to send message to the client");
+            free(msgBuf);
             return PASSWD_ERR_SEND_FAILED;
         }
 
@@ -112,6 +113,8 @@ void listen_socket(RSA *keypair)
     {
         /* couldn't find socket location from yaml */
         VLOG_ERR("Cannot find socket descriptor location");
+        free(enc_msg);
+        free(dec_msg);
         exit(PASSWD_ERR_FATAL);
     }
 
@@ -123,6 +126,8 @@ void listen_socket(RSA *keypair)
     if (0 > (fdSocket = socket(AF_UNIX, SOCK_STREAM, 0)))
     {
         VLOG_ERR("Cannot find socket descriptor location");
+        free(enc_msg);
+        free(dec_msg);
         return;
     }
 
@@ -133,6 +138,8 @@ void listen_socket(RSA *keypair)
     if (0 > (err = bind(fdSocket, (struct sockaddr *)&unix_sockaddr, size)))
     {
         VLOG_ERR("Cannot bind to socket %s", unix_sockaddr.sun_path);
+        free(enc_msg);
+        free(dec_msg);
         return;
     }
 
@@ -146,6 +153,8 @@ void listen_socket(RSA *keypair)
     if (0 > (err = listen(fdSocket, 3)))
     {
         VLOG_ERR("Failed to initiate a socket listen");
+        free(enc_msg);
+        free(dec_msg);
         return;
     }
 
@@ -162,6 +171,8 @@ void listen_socket(RSA *keypair)
                 (socklen_t *)&size)))
         {
             VLOG_ERR("Fail to connect with the client");
+            free(enc_msg);
+            free(dec_msg);
             exit(PASSWD_ERR_FATAL);
         }
 
