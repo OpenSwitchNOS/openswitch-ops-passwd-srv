@@ -66,6 +66,7 @@ int process_client_request(passwd_client_t *client);
 
 int create_socket();
 void listen_socket();
+void socket_term_signal_handler();
 
 int validate_password(passwd_client_t *client);
 int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);

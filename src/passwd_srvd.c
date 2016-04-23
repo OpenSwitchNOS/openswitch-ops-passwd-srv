@@ -153,6 +153,21 @@ create_directory()
     mkdir(PASSWD_RUN_DIR, S_IRUSR | S_IWUSR | S_IRGRP | S_IXGRP);
 }
 
+/**
+ * Signal handler to shutdown the password server gracefully
+ *
+ * @param sig the signal number to be handled
+ */
+static void
+passwd_srv_signal_handler(int sig)
+{
+    if (sig == SIGTERM)
+    {
+        /* un-initialize UNIX sockets */
+        socket_term_signal_handler();
+    }
+}
+
 /* password server main function */
 int main(int argc, char **argv) {
     RSA *rsa = NULL;
@@ -178,6 +193,9 @@ int main(int argc, char **argv) {
         VLOG_ERR("Failed to read YAML file");
         exit(PASSWD_ERR_FATAL);
     }
+
+    /* register for SIGTERM */
+    signal(SIGTERM, passwd_srv_signal_handler);
 
     create_directory();
 
