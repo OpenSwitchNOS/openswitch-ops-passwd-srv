@@ -35,6 +35,8 @@
 
 VLOG_DEFINE_THIS_MODULE(passwd_srv_conn);
 
+static int fdSocket = 0, socket_client = 0;
+
 /*
  * Using socket provided, send MSG back to client. MSG going back is the status
  * of password update.
@@ -83,9 +85,8 @@ void listen_socket(RSA *keypair)
     struct sockaddr_un unix_sockaddr;
     struct sockaddr_un client_sockaddr;
     int                err = -1;
-    int                socket_client, fmode;
     int                ret;
-    int fdSocket = 0, size = 0, storage_size = 0;
+    int                size = 0, storage_size = 0, fmode = 0;
     struct sockaddr_storage sock_storage;
     char   filemode[] = "0766";
     char   *sock_file = NULL;
@@ -181,6 +182,7 @@ void listen_socket(RSA *keypair)
             VLOG_ERR("Failed to retrieve the message from the client");
             send_msg_to_client(socket_client, PASSWD_ERR_RECV_FAILED);
             shutdown(socket_client, SHUT_WR);
+            close(socket_client);
             continue;
         }
 
@@ -213,5 +215,27 @@ void listen_socket(RSA *keypair)
 
         /* clean up */
         memset(&client, 0, sizeof(client));
+        socket_client = 0;
+    }
+}
+
+/**
+ * Close all UNIX socket used by the password server
+ * - this function gets called when SIGTERM is sent
+ */
+void socket_uninit()
+{
+    if (socket_client > 0)
+    {
+        /* client has a opened socket connected to the password server */
+        shutdown(socket_client, SHUT_WR);
+        close(socket_client);
+    }
+
+    if (fdSocket > 0)
+    {
+        /* UNIX socket is used by the password server */
+        shutdown(fdSocket, SHUT_WR);
+        close(fdSocket);
     }
 }
