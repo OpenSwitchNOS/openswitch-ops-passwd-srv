@@ -132,8 +132,12 @@ create_directory()
     struct group *passwd_grp;
 
     /* set group to be ovsdb_group */
-    passwd_grp = getgrnam(OVSDB_GROUP);
-    setgid(passwd_grp->gr_gid);
+    if ((passwd_grp = getgrnam(OVSDB_GROUP)))
+    {
+        /* if group returns NULL, skip setting gid */
+        VLOG_INFO("Unable to get ovsdb-client group information");
+        setgid(passwd_grp->gr_gid);
+    }
 
     if ((0 == stat(PASSWD_RUN_DIR, &f_stat)) && (0 != remove(PASSWD_RUN_DIR)))
     {
