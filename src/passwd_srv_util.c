@@ -171,8 +171,12 @@ cleanup:
 
     /* make the file readable by owner and group */
     umask(S_IRUSR | S_IWUSR | S_IRGRP);
-    ovsdb_client_grp = getgrnam("ovsdb-client");
-    chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
+    if ((ovsdb_client_grp = getgrnam("ovsdb-client")))
+    {
+        /* if group is not found, skip setting gid */
+        VLOG_INFO("Couldn't set the public key to ovsdb-client group");
+        chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
+    }
 
     /* Calling function must do RSA_free(rsa) when it is done with resource */
     return rsa;
