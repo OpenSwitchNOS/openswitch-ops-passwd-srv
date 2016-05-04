@@ -171,8 +171,12 @@ cleanup:
 
     /* make the file readable by owner and group */
     umask(S_IRUSR | S_IWUSR | S_IRGRP);
-    ovsdb_client_grp = getgrnam("ovsdb-client");
-    chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
+    if ((ovsdb_client_grp = getgrnam("ovsdb-client")))
+    {
+        /* if group is not found, skip setting gid */
+        VLOG_INFO("Couldn't set the public key to ovsdb-client group");
+        chown(pub_key_path, getuid(), ovsdb_client_grp->gr_gid);
+    }
 
     /* Calling function must do RSA_free(rsa) when it is done with resource */
     return rsa;
@@ -201,7 +205,7 @@ static size_t SHA_salt_size ()
 static
 char *search_login_defs(const char *target)
 {
-    char line[1024], *value;
+    char line[1024], *value, *temp;
     FILE *fpLogin;
 
     /* find encrypt_method and assign it to static crypt_method */
@@ -217,10 +221,11 @@ char *search_login_defs(const char *target)
             (' ' == line[strlen(target)]))
         {
             /* found matching string, find next token and return */
-            char *temp = &(line[strlen(target) + 1]);
+            temp = &(line[strlen(target) + 1]);
             value = strdup(temp);
             value[strlen(value)] = '\0';
 
+            fclose(fpLogin);
             return value;
         }
     } /* while */
@@ -297,6 +302,11 @@ void find_encrypt_method()
         else
         {
             crypt_method = strdup("MD5");
+        }
+
+        if (method)
+        {
+            free(method);
         }
 
         return;
@@ -464,46 +474,12 @@ int create_and_store_password(passwd_client_t *client)
     err = store_password(client->msg.username, newpassword);
 
     memset(newpassword, 0, strlen(newpassword));
+    memset(password, 0, strlen(password));
     memset(salt, 0, strlen(salt));
     free(salt);
+    free(password);
 
     return err;
-}
-
-/**
- * validate user information using socket descriptor and passwd file
- *
- * @param sockaddr  sockaddr structure for client connection
- * @param client    client structure entry
- *
- * @return 0 if client is ok to update pasword
- */
-int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client)
-{
-    struct stat     c_stat;
-    struct passwd   *user = NULL;
-
-    if (NULL == client)
-    {
-        return PASSWD_ERR_INVALID_USER;
-    }
-
-    memset(&c_stat, 0, sizeof(c_stat));
-
-    /* user is found, compare with client info */
-    if (0 == strncmp(user->pw_name, client->msg.username,
-            strlen(client->msg.username)))
-    {
-        /* sender is user who wants to change own password */
-        return PASSWD_ERR_SUCCESS;
-    }
-    else if (0 == strncmp(user->pw_name, "ops", strlen("ops")))
-    {
-        /* sender is ops who wants to change user password */
-        return PASSWD_ERR_SUCCESS;
-    }
-
-    return PASSWD_ERR_INVALID_USER;
 }
 
 /**
