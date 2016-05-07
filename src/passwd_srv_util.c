@@ -26,6 +26,9 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <grp.h>
+#include <sys/socket.h>
+#include <proc/readproc.h>
+#include <dirent.h>
 
 #include "openvswitch/vlog.h"
 #include "passwd_srv_pri.h"
@@ -374,6 +377,205 @@ char *create_new_salt()
     return strdup(result);
 }
 
+/**
+ * verify user based on group information
+ *
+ * @user username
+ * @group_name group which user must be the part of it
+ * @return true if user is in the specified group
+ */
+static int
+check_user_group( const char *user, const char *group_name)
+{
+       int j, ngroups;
+       gid_t *groups;
+       struct passwd *pw;
+       struct group *gr;
+
+       ngroups = 10;
+       groups = malloc(ngroups * sizeof (gid_t));
+       if (groups == NULL) {
+           VLOG_DBG("Malloc failed. Function = %s, Line = %d", __func__, __LINE__);
+           return false;
+       }
+
+       /* Fetch passwd structure (contains first group ID for user) */
+
+       pw = getpwnam(user);
+       if (pw == NULL) {
+           VLOG_DBG("Invalid User. Function = %s, Line = %d", __func__,__LINE__);
+           free(groups);
+           return false;
+       }
+
+       /* Retrieve group list */
+
+       if (getgrouplist(user, pw->pw_gid, groups, &ngroups) == -1) {
+           VLOG_DBG("Retrieving group list failed. Function = %s, Line = %d", __func__, __LINE__);
+           free(groups);
+           return false;
+       }
+
+       /* check user exist in ovsdb-client group */
+       for (j = 0; j < ngroups; j++) {
+           gr = getgrgid(groups[j]);
+           if (gr != NULL) {
+               if (!strcmp(gr->gr_name,group_name)) {
+                   free(groups);
+                   return true;
+               }
+           }
+       }
+       free(groups);
+       return false;
+}
+
+/**
+ * Using inode information retrieved by calling kernel via netlink,
+ * get a pid of the socket client connected to the password server
+ *
+ * @param passwd_srv_peer peer inode information
+ * @return pid of the client, 0 if none found
+ */
+static int
+get_client_pid_info(int passwd_srv_peer)
+{
+    DIR *proc_dir, *sub_dir;
+    struct dirent *proc_dir_entry, *fd_dir_entry;
+    int pid, fd;
+    char fd_dir_name[PASSWD_SRV_MAX_STR_SIZE], trailing_ch;
+    char sub_name[PASSWD_SRV_MAX_STR_SIZE+PASSWD_USERNAME_SIZE];
+
+    const char *pattern = "socket:[";
+    unsigned int peer_ino;
+    char lnk[PASSWD_SRV_MAX_STR_SIZE];
+    ssize_t link_len;
+
+    /* open /proc directory to search files in fd */
+    if ((proc_dir = opendir("/proc/")) == NULL)
+    {
+        VLOG_ERR("Failed to open /proc/");
+        return 0;
+    }
+
+    while ((proc_dir_entry = readdir(proc_dir)) != NULL) {
+
+        if (sscanf(proc_dir_entry->d_name, "%d%c", &pid, &trailing_ch) != 1){
+            /* we only care about directory named after pid */
+            continue;
+        }
+
+        snprintf(fd_dir_name, PASSWD_SRV_MAX_STR_SIZE-1, "/proc/%d/fd", pid);
+
+        if ((sub_dir = opendir(fd_dir_name)) == NULL) {
+            /*/proc/pid/fd directory cannot be opened, move onto next one */
+            VLOG_DBG("Cannot open %s", fd_dir_name);
+            continue;
+        }
+
+        while ((fd_dir_entry = readdir(sub_dir)) != NULL) {
+
+            fd = 0;
+            link_len = 0;
+            peer_ino = 0;
+            memset(lnk, 0, PASSWD_SRV_MAX_STR_SIZE);
+
+            if (sscanf(fd_dir_entry->d_name, "%d%c", &fd, &trailing_ch) != 1)
+            {
+                /* we only care about socket inode which is integer number */
+                continue;
+            }
+
+            snprintf(sub_name, PASSWD_SRV_MAX_STR_SIZE+PASSWD_USERNAME_SIZE-1,
+                    "/proc/%d/fd/%d", pid, fd);
+
+            /*
+             * file found is a socket inode description which is symlinked
+             */
+            link_len = readlink(sub_name, lnk, PASSWD_SRV_MAX_STR_SIZE-1);
+
+            if (link_len == -1)
+            {
+                VLOG_DBG("Failed to get link info for %s", sub_name);
+                continue;
+            }
+
+            /* append null terminator to symlink string */
+            lnk[link_len] = '\0';
+
+            if (strncmp(lnk, pattern, strlen(pattern)))
+            {
+                /* file in fd folder is not socket inode, move onto the next */
+                continue;
+            }
+
+            sscanf(lnk, "socket:[%u]", &peer_ino);
+
+            if (peer_ino == passwd_srv_peer)
+            {
+                /* found the peer inode */
+                closedir(sub_dir);
+                closedir(proc_dir);
+                return pid;
+            }
+        }
+
+        closedir(sub_dir);
+    }
+    closedir(proc_dir);
+    return 0;
+}
+
+/**
+ * Get socket inode of the password server which is connected with the client
+ *
+ * @param client_socket socket fd returned via accept() call
+ * @return socket inode of the password server, 0 if none found
+ */
+static int
+get_server_ino_info(int client_socket)
+{
+    int len = 0, inode = 0;
+    char fd_content[1024] = {0};
+    char fd_location[1024] = {0};
+
+    snprintf(fd_location, 1023, "/proc/%d/fd/%d", getpid(), client_socket);
+
+    if ((len = readlink(fd_location, fd_content, 1023)) <= 0)
+    {
+        return 0;
+    }
+
+    sscanf(fd_content, "socket:[%u]", &inode);
+
+    return inode;
+}
+
+/**
+ * Get the username of connected client
+ *
+ * @param pid process ID of the running process connected via a socket
+ * @return username of the process, NULL if user is not known
+ */
+static char*
+get_client_username(int pid)
+{
+    char stat_string[PASSWD_USERNAME_SIZE];
+    struct stat u_stat;
+    struct passwd *user;
+
+    snprintf(stat_string, PASSWD_USERNAME_SIZE - 1, "/proc/%d/stat", pid);
+
+    stat(stat_string, &u_stat);
+
+    if ((user = getpwuid(u_stat.st_uid)) == NULL) {
+        VLOG_ERR("Cannot stat %s stat_string", stat_string);
+        return NULL;
+    }
+
+    return strdup(user->pw_name);
+}
+
 /*
  * Update password for the user. Search for the username in /etc/shadow and
  * update password string with on passed onto it.
@@ -480,6 +682,99 @@ int create_and_store_password(passwd_client_t *client)
     free(password);
 
     return err;
+}
+
+/**
+ * Find username of the connected client
+ *
+ * @param socket_client socket FD connected to the client
+ * @return username
+ */
+char *
+get_connected_username(int socket_client)
+{
+    int passwd_srv_ino = 0, passwd_srv_peer = 0, pid = 0;
+    char *username = NULL;
+
+    /* find matching process for ino */
+    if ((passwd_srv_ino = get_server_ino_info(socket_client)) == 0)
+    {
+        VLOG_ERR("Cannot find socket inode (s=%d)", socket_client);
+        return NULL;
+    }
+
+    // passwd_srv_peer = get_peer_ino_info(passwd_srv_ino);
+    if ((passwd_srv_peer = find_connected_client_inode(passwd_srv_ino)) == 0)
+    {
+        VLOG_ERR("Cannot find socket inode of connected peer ");
+        return NULL;
+    }
+
+    /* get pid of connected client */
+    if ((pid = get_client_pid_info(passwd_srv_peer)) == 0)
+    {
+        VLOG_ERR("Cannot find PID of connected peer ");
+        return NULL;
+    }
+
+    /* get username based on pid */
+    if ((username = get_client_username(pid)) == NULL)
+    {
+        VLOG_ERR("Cannot find username for pid=%d", pid);
+        return NULL;
+    }
+
+    return username;
+}
+
+/**
+ * validate user information using socket descriptor and passwd file
+ *
+ * @param client    client structure entry
+ *
+ * @return 0 if client is ok to update pasword
+ */
+int validate_user(int opcode, char *client)
+{
+    if (NULL == client)
+    {
+        return PASSWD_ERR_INVALID_USER;
+    }
+
+    if ((strlen(client) == strlen("root")) && (strcmp(client, "root")) == 0)
+    {
+        /* connected client is root */
+        return PASSWD_ERR_SUCCESS;
+    }
+
+    /* verify that client has privilege */
+    switch(opcode)
+    {
+    case PASSWD_MSG_CHG_PASSWORD:
+    {
+        if (!check_user_group(client, OVSDB_GROUP) != PASSWD_ERR_SUCCESS)
+        {
+            return PASSWD_ERR_INVALID_USER;
+        }
+        break;
+    }
+    case PASSWD_MSG_ADD_USER:
+    case PASSWD_MSG_DEL_USER:
+    {
+        if (!check_user_group(client, ADMIN_GROUP) != PASSWD_ERR_SUCCESS)
+        {
+            return PASSWD_ERR_INVALID_USER;
+        }
+        break;
+    }
+    default:
+    {
+        /* operation is not supported */
+        return PASSWD_ERR_INVALID_OPCODE;
+    }
+    }
+
+    return PASSWD_ERR_SUCCESS;
 }
 
 /**
@@ -600,6 +895,8 @@ int process_client_request(passwd_client_t *client)
         if (NULL == (client->passwd = find_password_info(client->msg.username)))
         {
             /* logging error */
+            VLOG_INFO("User %s cannot be found in password file",
+                    client->msg.username);
             return PASSWD_ERR_USER_NOT_FOUND;
         }
 
@@ -611,11 +908,12 @@ int process_client_request(passwd_client_t *client)
 
         if (PASSWD_ERR_SUCCESS == (error = create_and_store_password(client)))
         {
-            printf("Password updated successfully for user\n");
+            VLOG_INFO("Password updated successfully for %s",
+                    client->msg.username);
         }
         else
         {
-            printf("Password was not updated successfully [error=%d]\n", error);
+            VLOG_INFO("Password was not updated successfully [error=%d]", error);
         }
         break;
     }
