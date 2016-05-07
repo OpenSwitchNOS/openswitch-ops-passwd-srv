@@ -87,10 +87,9 @@ void listen_socket(RSA *keypair)
     struct sockaddr_un client_sockaddr;
     int                err = -1;
     int                ret;
-    int                size = 0, storage_size = 0, fmode = 0;
-    struct sockaddr_storage sock_storage;
+    int                size = 0, fmode = 0;
     char   filemode[] = "0766";
-    char   *sock_file = NULL;
+    char   *sock_file = NULL, *connected_client = NULL;
     unsigned char *enc_msg;
     unsigned char *dec_msg;
     passwd_client_t client;
@@ -145,7 +144,6 @@ void listen_socket(RSA *keypair)
 
     fmode = strtol(filemode, 0, 8);
     chmod(sock_file, fmode);
-    storage_size = sizeof(sock_storage);
 
     memset(&client_sockaddr, 0, sizeof(client_sockaddr));
 
@@ -175,12 +173,6 @@ void listen_socket(RSA *keypair)
             free(dec_msg);
             exit(PASSWD_ERR_FATAL);
         }
-
-        /* get client-socket information */
-        memset(&sock_storage, 0, sizeof(sock_storage));
-        getpeername(socket_client, (struct sockaddr*)&sock_storage,
-                (socklen_t *)&storage_size);
-        memcpy(&client_sockaddr, &sock_storage, sizeof(client_sockaddr));
 
         /*
          * we get here if connection is made between client and server
@@ -218,6 +210,36 @@ void listen_socket(RSA *keypair)
 
         memcpy(&client.msg, dec_msg, sizeof(passwd_srv_msg_t));
         client.socket = socket_client;
+
+        /* find username of connected client */
+        if ((connected_client = get_connected_username(socket_client)) == NULL)
+        {
+            VLOG_ERR("Failed to get connected client information");
+            send_msg_to_client(socket_client, PASSWD_ERR_INVALID_USER);
+            shutdown(socket_client, SHUT_WR);
+            close(socket_client);
+            continue;
+        }
+
+        /* validate the connected client */
+        if (validate_user(client.msg.op_code, connected_client) !=
+                PASSWD_ERR_SUCCESS)
+        {
+            VLOG_ERR("Failed to validate a connected client");
+            send_msg_to_client(socket_client, PASSWD_ERR_INVALID_USER);
+            free(connected_client);
+            connected_client = NULL;
+            shutdown(socket_client, SHUT_WR);
+            close(socket_client);
+            continue;
+        }
+        else
+        {
+            VLOG_DBG("%s is successfully validated", connected_client);
+            free(connected_client);
+            connected_client = NULL;
+        }
+
         err = process_client_request(&client);
 
         send_msg_to_client(socket_client, err);

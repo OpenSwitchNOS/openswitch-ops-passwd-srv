@@ -37,6 +37,7 @@ set (SOURCES
     ${PROJECT_SOURCE_DIR}/src/passwd_srvd.c
     ${SRC_DIR}/passwd_srv_conn.c
     ${SRC_DIR}/passwd_srv_util.c
+    ${SRC_DIR}/passwd_srv_netlink.c
     ${SRC_DIR}/lib/passwd_srv_yaml.c
 )
 
