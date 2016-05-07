@@ -98,6 +98,9 @@ Below depicts how the password server handles password update requests:
 1. Upon successful connection with the client, retrieve the message sent by the client
 2. Using private key, decrypt cipher text message
 3. Validate the client and old-password
+   - ensure connected client via unix socket has privilege
+     - ovsdb_client group is allowed to update the password
+     - ops_admin group is allowed to add or remove user
    - validate user using the old-password provided
 4. Create a salt and the hashed password
 5. Update the user password in /etc/shadow
@@ -157,6 +160,8 @@ Below depicts how the password server handles password update requests:
 +-----------------------------+
 
 (1) The password server validates the user with old password provided.
+Connected client is validated using netlink to query kernel about the socket
+peer and verify whether the connected client has privilege.
 
 ##message format
 
