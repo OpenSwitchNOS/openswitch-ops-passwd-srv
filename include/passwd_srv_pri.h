@@ -45,6 +45,7 @@
 #define USERADD "/usr/sbin/useradd"
 #define OVSDB_GROUP "ovsdb-client"
 #define NETOP_GROUP "ops_netop"
+#define ADMIN_GROUP "ops_admin"
 #define VTYSH_PROMPT "/usr/bin/vtysh"
 #define USERDEL "/usr/sbin/userdel"
 #define USER_NAME_MAX_LENGTH 32
@@ -69,7 +70,9 @@ void listen_socket();
 void socket_term_signal_handler();
 
 int validate_password(passwd_client_t *client);
-int validate_user(struct sockaddr_un *sockaddr, passwd_client_t *client);
+int validate_user(int opcode, char *client);
+char *get_connected_username();
+int find_connected_client_inode(int passwd_srv_ino);
 
 int create_and_store_password(passwd_client_t *client);
 struct spwd *find_password_info(const char *username);
