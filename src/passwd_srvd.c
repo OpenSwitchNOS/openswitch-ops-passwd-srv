@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #include <sys/stat.h>
 #include <limits.h>
@@ -56,6 +57,11 @@
 VLOG_DEFINE_THIS_MODULE(passwd_srvd);
 #define __USE_XOPEN_EXTENDED
 #include "/usr/include/ftw.h"
+
+struct unixctl_server *unixctl;
+int exiting = 0;
+
+void* thread_unixctl(void* unused);
 
 static char *
 passwd_srv_parse_options(int argc, char *argv[], char **unixctl_pathp)
@@ -169,12 +175,18 @@ passwd_srv_signal_handler(int sig)
     {
         /* un-initialize UNIX sockets */
         socket_term_signal_handler();
+        unixctl_server_destroy(unixctl);
+        exiting = 1;
     }
 }
 
 /* password server main function */
 int main(int argc, char **argv) {
+    char *unixctl_path = NULL;
+    int retval;
     RSA *rsa = NULL;
+
+    pthread_t thread_unixctl_id;
 
     set_program_name(argv[0]);
     proctitle_init(argc, argv);
@@ -190,6 +202,13 @@ int main(int argc, char **argv) {
      * Process is forked by systemd daemon to monitor the process.
      */
     daemonize_start();
+
+    retval = unixctl_server_create(unixctl_path, &unixctl);
+    if (retval) {
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_create(&thread_unixctl_id, NULL, &thread_unixctl, NULL);
 
     if (PASSWD_ERR_SUCCESS != parse_passwd_srv_yaml())
     {
@@ -218,5 +237,19 @@ int main(int argc, char **argv) {
     // do we need signal handling?
     RSA_free(rsa);
 
+    pthread_join(thread_unixctl_id, NULL);
     return PASSWD_ERR_SUCCESS;
+}
+
+/* thread function to allow for parallel unixctl functionality */
+void*
+thread_unixctl(void* unused)
+{
+    while (!exiting)
+    {
+        unixctl_server_run(unixctl);
+        unixctl_server_wait(unixctl);
+
+    }
+    return NULL;
 }
