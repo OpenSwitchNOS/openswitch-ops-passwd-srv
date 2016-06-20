@@ -21,6 +21,7 @@
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <sys/un.h>
+#include <unixctl.h>
 
 #include "passwd_srv_pub.h"
 
@@ -48,6 +49,8 @@
 #define VTYSH_PROMPT "/usr/bin/vtysh"
 #define USERDEL "/usr/sbin/userdel"
 #define USER_NAME_MAX_LENGTH 32
+
+extern struct unixctl_server *unixctl;
 
 /*
  * password server user-object data structure

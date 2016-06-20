@@ -27,6 +27,7 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unixctl.h>
 
 #include "openvswitch/vlog.h"
 #include "passwd_srv_pri.h"
@@ -214,6 +215,7 @@ void listen_socket(RSA *keypair)
             shutdown(socket_client, SHUT_WR);
             close(socket_client);
             continue;
+
         }
 
         memcpy(&client.msg, dec_msg, sizeof(passwd_srv_msg_t));
