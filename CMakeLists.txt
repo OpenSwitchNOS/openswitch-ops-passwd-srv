@@ -48,6 +48,7 @@ target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
                        -lpthread -lrt -lcrypt -lcrypto -lyaml)
 
 add_subdirectory(src/lib)
+add_subdirectory(src/cli)
 
 # Rules to install ops-passwd-srv binary in rootfs
 install(TARGETS ${PASSWDSRV}
