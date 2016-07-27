@@ -42,13 +42,14 @@
  * defines for adding user
  * defect #151 : supports for useradd to avoid using hardcoded salt.
  */
-#define USERADD "/usr/sbin/useradd"
-#define OVSDB_GROUP "ovsdb-client"
-#define NETOP_GROUP "ops_netop"
-#define ADMIN_GROUP "ops_admin"
-#define VTYSH_PROMPT "/usr/bin/vtysh"
-#define USERDEL "/usr/sbin/userdel"
+#define USERADD              "/usr/sbin/useradd"
+#define OVSDB_GROUP          "ovsdb-client"
+#define NETOP_GROUP          "ops_netop"
+#define ADMIN_GROUP          "ops_admin"
+#define VTYSH_PROMPT         "/usr/bin/vtysh"
+#define USERDEL              "/usr/sbin/userdel"
 #define USER_NAME_MAX_LENGTH 32
+#define USER_PS_DEL          "sudo /usr/bin/pkill"
 
 /*
  * password server user-object data structure

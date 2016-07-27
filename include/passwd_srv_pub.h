@@ -20,12 +20,13 @@
 /*
  * global definitions
  */
-#define PASSWD_USERNAME_SIZE 50                         /* size of username */
+#define PASSWD_USERNAME_SIZE 32                         /* size of username */
 #define PASSWD_PASSWORD_SIZE 50                         /* size of password */
 #define PASSWD_SRV_FP_SIZE   255
 #define PASSWD_SRV_MAX_STR_SIZE   255
 #define PASSWD_SRV_PUB_KEY_LEN 2048                     /* key length in bits */
 #define PASSWDSRV_PAD_OVERHEAD  41
+#define PASSWD_GROUPNAME_SIZE 32                         /* size of username */
 /*
  * Message type definition
  *
@@ -72,6 +73,7 @@ typedef struct passwd_srv_msg {
     char username[PASSWD_USERNAME_SIZE];
     char oldpasswd[PASSWD_PASSWORD_SIZE];
     char newpasswd[PASSWD_PASSWORD_SIZE];
+    char groupname[PASSWD_GROUPNAME_SIZE];
 } passwd_srv_msg_t;
 
 /*
