@@ -28,7 +28,6 @@
 #include <grp.h>
 #include <sys/socket.h>
 #include <dirent.h>
-
 #include "openvswitch/vlog.h"
 #include "passwd_srv_pri.h"
 #include <openssl/rand.h>
@@ -251,18 +250,27 @@ char *search_login_defs(const char *target)
  * @param useradd  add if true, deleate otherwise
  */
 static
-struct spwd *create_user(const char *username, int useradd)
+struct spwd *create_user(const char *username, const char *groupname, int useradd)
 {
     char useradd_comm[512];
     struct spwd *passwd_entry = NULL;
 
     memset(useradd_comm, 0, sizeof(useradd_comm));
 
-    if (useradd)
+    if(useradd)
     {
-        snprintf(useradd_comm, sizeof(useradd_comm),
-            "%s -g %s -G %s -s %s %s", USERADD, NETOP_GROUP, OVSDB_GROUP,
-            VTYSH_PROMPT, username);
+        if (!strcmp(groupname, "admin"))
+        {
+            snprintf(useradd_comm, sizeof(useradd_comm),
+                "%s -g %s -G %s -s %s %s", USERADD, ADMIN_GROUP, OVSDB_GROUP,
+                VTYSH_PROMPT, username);
+        }
+        else if (!strcmp(groupname, "netop"))
+        {
+            snprintf(useradd_comm, sizeof(useradd_comm),
+                "%s -g %s -G %s -s %s %s", USERADD, NETOP_GROUP, OVSDB_GROUP,
+                VTYSH_PROMPT, username);
+        }
     }
     else
     {
@@ -924,7 +932,8 @@ int process_client_request(passwd_client_t *client)
         }
 
         /* add user to /etc/passwd file */
-        if (NULL == (client->passwd = create_user(client->msg.username, TRUE)))
+        if (NULL == (client->passwd = create_user(client->msg.username,
+                                                  client->msg.groupname, TRUE)))
         {
             /* failed to create user or getting information from /etc/passwd */
             VLOG_ERR("Failed to create a user");
@@ -940,7 +949,7 @@ int process_client_request(passwd_client_t *client)
         {
             VLOG_INFO("User was not added successfully [error=%d]", error);
             /* delete user since it failed to add password */
-            create_user(client->msg.username, FALSE);
+            create_user(client->msg.username, client->msg.groupname, FALSE);
         }
         break;
     }
@@ -954,7 +963,8 @@ int process_client_request(passwd_client_t *client)
         }
 
         /* delete user from /etc/passwd file */
-        if (NULL != (client->passwd = create_user(client->msg.username, FALSE)))
+        if (NULL != (client->passwd = create_user(client->msg.username,
+                                                  client->msg.groupname, FALSE)))
         {
             VLOG_INFO("Failed to remove user %s", client->msg.username);
             return PASSWD_ERR_USERDEL_FAILED;
