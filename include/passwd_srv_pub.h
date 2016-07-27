@@ -72,6 +72,7 @@ typedef struct passwd_srv_msg {
     char username[PASSWD_USERNAME_SIZE];
     char oldpasswd[PASSWD_PASSWORD_SIZE];
     char newpasswd[PASSWD_PASSWORD_SIZE];
+    char groupname[PASSWD_USERNAME_SIZE];
 } passwd_srv_msg_t;
 
 /*
