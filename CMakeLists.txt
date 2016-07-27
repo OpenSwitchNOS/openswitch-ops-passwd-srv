@@ -16,6 +16,7 @@ cmake_minimum_required (VERSION 2.8)
 
 set (PASSWDSRV ops-passwd-srv)
 project (${PASSWDSRV})
+
 set (SRC_DIR src)
 set (INCL_DIR include)
 
@@ -48,6 +49,8 @@ target_link_libraries (${PASSWDSRV} ${CONFIG_YAML_LIBRARIES}
                        -lpthread -lrt -lcrypt -lcrypto -lyaml)
 
 add_subdirectory(src/lib)
+add_subdirectory(src/cli)
+
 
 # Rules to install ops-passwd-srv binary in rootfs
 install(TARGETS ${PASSWDSRV}
